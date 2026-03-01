@@ -121,6 +121,16 @@ totalseg-muscle-tool/
     └── pyproject.toml    # Dependencies (uv)
 ```
 
+### Developer Docs
+
+For engineering handoff and AI-assisted development context, see:
+
+- `docs/INDEX.md`
+- `docs/PROJECT_MEMORY.md`
+- `docs/MODULE_MAP.md`
+- `docs/CSV_LOGIC.md`
+- `docs/CHANGELOG_DEV.md`
+
 ### Testing
 
 ```bash
@@ -277,6 +287,16 @@ totalseg-muscle-tool/
     ├── draw.py           # PNG 疊圖繪製
     └── pyproject.toml    # 依賴套件清單 (uv)
 ```
+
+### 開發文檔（AI/工程接手）
+
+如需快速理解開發歷程與模組結構，請看：
+
+- `docs/INDEX.md`
+- `docs/PROJECT_MEMORY.md`
+- `docs/MODULE_MAP.md`
+- `docs/CSV_LOGIC.md`
+- `docs/CHANGELOG_DEV.md`
 
 ### 測試
 
