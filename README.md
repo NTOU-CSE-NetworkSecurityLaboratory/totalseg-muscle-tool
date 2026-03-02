@@ -189,7 +189,7 @@ This project is open source for research and educational purposes.
 #### **Windows**
 雙擊執行 `START 啟動.bat` (Windows) 啟動程式。首次執行會自動完成環境配置。
 
-> ⚠️ **溫馨提示**：若啟動失敗或無法讀取檔案，建議將解壓縮後的資料夾移至 **C 槽或 D 槽等純英文路徑下**執行，以避免 Windows 中文路徑造成的不可預期錯誤。
+> **溫馨提示**：若啟動失敗或無法讀取檔案，建議將解壓縮後的資料夾移至 **C 槽或 D 槽等純英文路徑下**執行，以避免 Windows 中文路徑造成的不可預期錯誤。
 
 #### **Mac/Linux**
 ```bash

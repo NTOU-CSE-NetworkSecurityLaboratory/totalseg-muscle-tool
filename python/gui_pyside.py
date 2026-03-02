@@ -1,5 +1,4 @@
 import sys
-import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -243,13 +242,13 @@ class TotalSegApp(QMainWindow):
         nav_layout.addWidget(brand_lbl)
 
         # Mode Selector Buttons
-        self.btn_mode_seg = QPushButton("🧠  AI 自動分割 (Segmentation)")
+        self.btn_mode_seg = QPushButton("AI 自動分割 (Segmentation)")
         self.btn_mode_seg.setObjectName("mode_btn")
         self.btn_mode_seg.setProperty("active", True)
         self.btn_mode_seg.clicked.connect(lambda: self.switch_mode("seg"))
         nav_layout.addWidget(self.btn_mode_seg)
 
-        self.btn_mode_compare = QPushButton("⚖️  影像對比分析 (Manual Compare)")
+        self.btn_mode_compare = QPushButton("影像對比分析 (Manual Compare)")
         self.btn_mode_compare.setObjectName("mode_btn")
         self.btn_mode_compare.setProperty("active", False)
         self.btn_mode_compare.clicked.connect(lambda: self.switch_mode("compare"))
@@ -327,11 +326,11 @@ class TotalSegApp(QMainWindow):
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(15)
 
-        # 📂 Input Selection
+        # Input Selection
         io_group = QGroupBox("1. 影像資料來源")
         io_layout = QVBoxLayout(io_group)
         
-        self.btn_select_src = QPushButton("📂  選擇 DICOM 資料夾")
+        self.btn_select_src = QPushButton("選擇 DICOM 資料夾")
         self.btn_select_src.setMinimumHeight(48)
         self.btn_select_src.clicked.connect(self.select_source)
         io_layout.addWidget(self.btn_select_src)
@@ -343,7 +342,7 @@ class TotalSegApp(QMainWindow):
         
         left_layout.addWidget(io_group)
 
-        # ⚙️ AI Settings
+        # AI Settings
         cfg_group = QGroupBox("2. AI 分割參數設定")
         cfg_layout = QVBoxLayout(cfg_group)
         
@@ -411,7 +410,7 @@ class TotalSegApp(QMainWindow):
         self.out_group.setCheckable(True)
         self.out_group.setChecked(False)
         out_layout = QVBoxLayout(self.out_group)
-        self.btn_select_out = QPushButton("📁  修改輸出存放目錄")
+        self.btn_select_out = QPushButton("修改輸出存放目錄")
         self.btn_select_out.clicked.connect(self.select_output)
         out_layout.addWidget(self.btn_select_out)
         self.out_label = QLabel("預設：於來源路徑旁產生 _output 檔案夾")
@@ -453,7 +452,7 @@ class TotalSegApp(QMainWindow):
         self.pbar = QProgressBar()
         right_layout.addWidget(self.pbar)
 
-        self.btn_start = QPushButton("🚀  啟動 AI 自動分割任務")
+        self.btn_start = QPushButton("啟動 AI 自動分割任務")
         self.btn_start.setObjectName("primary_btn")
         self.btn_start.setMinimumHeight(65)
         self.btn_start.setEnabled(False)
@@ -467,7 +466,7 @@ class TotalSegApp(QMainWindow):
         layout.setContentsMargins(40, 40, 40, 40)
         layout.setSpacing(20)
 
-        header_lbl = QLabel("⚖️ 人工標註 vs AI 自動分割對比分析")
+        header_lbl = QLabel("人工標註 vs AI 自動分割對比分析")
         header_lbl.setStyleSheet("font-size: 18px; font-weight: bold; color: #495057;")
         layout.addWidget(header_lbl)
         
@@ -482,21 +481,21 @@ class TotalSegApp(QMainWindow):
         # AI Mask Path
         self.ai_mask_path_lbl = QLabel("尚未選取檔案")
         self.ai_mask_path_lbl.setWordWrap(True)
-        btn_ai = QPushButton("🔍 選取 AI 分割結果 (NII/NRRD)")
+        btn_ai = QPushButton("選取 AI 分割結果 (NII/NRRD)")
         btn_ai.clicked.connect(self.select_compare_ai)
         comp_layout.addRow(btn_ai, self.ai_mask_path_lbl)
         
         # Manual Mask Path
         self.manual_mask_path_lbl = QLabel("尚未選取檔案")
         self.manual_mask_path_lbl.setWordWrap(True)
-        btn_manual = QPushButton("🔍 選取人工標註結果 (NII/NRRD)")
+        btn_manual = QPushButton("選取人工標註結果 (NII/NRRD)")
         btn_manual.clicked.connect(self.select_compare_manual)
         comp_layout.addRow(btn_manual, self.manual_mask_path_lbl)
         
         layout.addWidget(comp_group)
 
         # Action
-        self.btn_run_compare = QPushButton("📊 開始執行比對分析")
+        self.btn_run_compare = QPushButton("開始執行比對分析")
         self.btn_run_compare.setObjectName("primary_btn")
         self.btn_run_compare.setMinimumHeight(55)
         self.btn_run_compare.setEnabled(False)
@@ -547,7 +546,7 @@ class TotalSegApp(QMainWindow):
                     break
                     
             if slice_idx == -1:
-                self.append_log("❌ [錯誤] 無法在「人工標註結果」中找到任何標註 (皆為 0)。\n")
+                self.append_log("[錯誤] 無法在「人工標註結果」中找到任何標註 (皆為 0)。\n")
                 return
 
             import numpy as np
@@ -564,11 +563,11 @@ class TotalSegApp(QMainWindow):
             ai_area = float(ai_slice.sum() * pixel_cm2)
             manual_area = float(manual_slice.sum() * pixel_cm2)
             
-            self.append_log(f"✅ [成功] 找到標註層級：第 {slice_idx + 1} 層\n")
+            self.append_log(f"[成功] 找到標註層級：第 {slice_idx + 1} 層\n")
             self.append_log("-" * 40 + "\n")
-            self.append_log(f"🧠 AI 分割面積： {ai_area:.2f} cm²\n")
-            self.append_log(f"👨‍⚕️ 人工標註面積： {manual_area:.2f} cm²\n")
-            self.append_log(f"🎯 Dice 重合度： {dice:.4f} (滿分 1.0)\n")
+            self.append_log(f"AI 分割面積： {ai_area:.2f} cm²\n")
+            self.append_log(f"人工標註面積： {manual_area:.2f} cm²\n")
+            self.append_log(f"Dice 重合度： {dice:.4f} (滿分 1.0)\n")
             self.append_log("-" * 40 + "\n")
             
             # HTML 樣式高亮
@@ -580,7 +579,7 @@ class TotalSegApp(QMainWindow):
                 self.append_log("<span style='color: #dc3545; font-weight: bold;'>評估：吻合度偏低，建議人工檢視</span><br>", is_html=True)
                 
         except Exception as e:
-            self.append_log(f"❌ [錯誤] 比對失敗：{str(e)}\n")
+            self.append_log(f"[錯誤] 比對失敗：{str(e)}\n")
         finally:
             self.btn_run_compare.setEnabled(True)
 
@@ -714,9 +713,10 @@ class TotalSegApp(QMainWindow):
 
     def append_log(self, text, is_html=False):
         self.log_area.moveCursor(QTextCursor.End)
-        if is_html:
+        if is_html and hasattr(self.log_area, "appendHtml"):
             self.log_area.appendHtml(text)
         else:
+            # QPlainTextEdit does not support appendHtml; fall back to plain text.
             self.log_area.insertPlainText(text)
         self.log_area.moveCursor(QTextCursor.End)
 
@@ -724,7 +724,7 @@ class TotalSegApp(QMainWindow):
         self.log_area.clear()
         self.is_running = True
         self.btn_start.setEnabled(False)
-        self.btn_start.setText("⏳ 初始化 AI 環境中...")
+        self.btn_start.setText("初始化 AI 環境中...")
         
         self.batch_queue = []
         for i in range(self.task_table.rowCount()):
@@ -749,23 +749,11 @@ class TotalSegApp(QMainWindow):
     def run_setup_and_segmentation(self):
         try:
             if shutil.which("uv") is None:
-                self.append_log("[系統] 正在安裝『uv』環境管理工具...\n")
-                cmd = 'powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"' if os.name == 'nt' else 'curl -LsSf https://astral.sh/uv/install.sh | sh'
-                subprocess.run(cmd, shell=True, capture_output=True)
-                if os.name == "nt":
-                    uv_paths = [
-                        os.path.expanduser("~\\.local\\bin"),
-                        os.path.expanduser("~\\.cargo\\bin"),
-                    ]
-                else:
-                    uv_paths = [os.path.expanduser("~/.local/bin"), os.path.expanduser("~/.cargo/bin")]
-                for uv_path in uv_paths:
-                    if uv_path not in os.environ.get("PATH", ""):
-                        os.environ["PATH"] += os.pathsep + uv_path
-
-            self.append_log("同步 AI 引擎環境中...\n")
-            self.process_state = "sync"
-            self.process.start("uv", ["sync"])
+                self.append_log("[錯誤] 找不到 uv，請先執行啟動器完成環境同步。\n")
+                self.reset_ui()
+                return
+            self.append_log("環境檢查完成，開始執行分割任務...\n")
+            self.run_next_batch_task()
         except Exception as e:
             self.append_log(f"[異常中斷] {str(e)}\n")
             self.reset_ui()
@@ -796,7 +784,7 @@ class TotalSegApp(QMainWindow):
         
         if suggestions:
             self.append_log("\n" + "─"*30)
-            self.append_log("\n🕵️ <span style='font-size: 14px; font-weight: bold;'>智慧診斷報告：</span>\n", is_html=True)
+            self.append_log("\n<span style='font-size: 14px; font-weight: bold;'>智慧診斷報告：</span>\n", is_html=True)
             for s in suggestions:
                 # 使用 HTML 呈現黃色強調背景
                 self.append_log(f"<div style='background-color: #fff3cd; color: #856404; padding: 5px; border-radius: 5px;'>{s}</div><br>", is_html=True)
@@ -883,7 +871,7 @@ class TotalSegApp(QMainWindow):
 
     def reset_ui(self):
         self.is_running = False
-        self.btn_start.setText("🚀  啟動 AI 自動分割任務")
+        self.btn_start.setText("啟動 AI 自動分割任務")
         self.btn_start.setEnabled(True)
         self.btn_select_src.setEnabled(True)
 

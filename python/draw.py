@@ -13,7 +13,7 @@ def validate_path_ascii(path: Path):
         _ = str(path).encode("ascii")
     except Exception:
         print(
-            f"❌ Path contains non-ASCII characters: {path}\n"
+            f"[ERROR] Path contains non-ASCII characters: {path}\n"
             "Please move to a path with only ASCII characters and retry."
         )
         sys.exit(1)
@@ -93,7 +93,7 @@ def discover_mask_files(
 def load_masks(mask_files, reference):
     masks = []
     if not mask_files:
-        print("❌ [ERROR] No mask files found!")
+        print("[ERROR] No mask files found!")
         raise RuntimeError("No mask files found!")
 
     resampler = sitk.ResampleImageFilter()
@@ -107,7 +107,7 @@ def load_masks(mask_files, reference):
             mask_arr = sitk.GetArrayFromImage(resampler.Execute(mask_img))
             masks.append((get_base_name(mf.stem), mask_arr))
         except Exception as err:
-            print(f"❌ [ERROR] Failed to load mask: {mf} - {err}")
+            print(f"[ERROR] Failed to load mask: {mf} - {err}")
             raise
 
     return masks
@@ -197,7 +197,7 @@ def dicom_to_overlay_png(
     reader = sitk.ImageSeriesReader()
     files = reader.GetGDCMSeriesFileNames(str(dicom_dir))
     if not files:
-        print(f"❌ [ERROR] No DICOM found in: {dicom_dir}")
+        print(f"[ERROR] No DICOM found in: {dicom_dir}")
         raise RuntimeError(f"No DICOM found in: {dicom_dir}")
 
     reader.SetFileNames(files)
@@ -289,14 +289,14 @@ def dicom_to_overlay_png(
 
         except Exception as e:
             print(
-                f"⚠ [WARNING] Overlay failed for slice {idx}: {files[idx]}, error: {e}"
+                f"[WARNING] Overlay failed for slice {idx}: {files[idx]}, error: {e}"
             )
             continue
 
-    print(f"✅ [SUCCESS] Total overlays saved: {output_count} in {out_dir}")
+    print(f"[SUCCESS] Total overlays saved: {output_count} in {out_dir}")
     if eroded_out_dir and erosion_iters > 0:
         print(
-            f"✅ [SUCCESS] Total eroded overlays saved: {eroded_output_count} in {eroded_out_dir}"
+            f"[SUCCESS] Total eroded overlays saved: {eroded_output_count} in {eroded_out_dir}"
         )
 
 
@@ -358,12 +358,12 @@ def main():
 
     # === Error checking ===
     if not dicom_path.exists():
-        print(f"❌ [ERROR] DICOM folder not found: {dicom_path}")
+        print(f"[ERROR] DICOM folder not found: {dicom_path}")
         print(f"   Current working directory: {Path.cwd()}")
         sys.exit(1)
 
     if not seg_output.exists():
-        print(f"❌ [ERROR] Mask folder not found: {seg_output}")
+        print(f"[ERROR] Mask folder not found: {seg_output}")
         print(f"   Expected path: {seg_output}")
         print(f"\n   Possible reasons:")
         print(f"   1. seg.py hasn't run yet or failed")
@@ -387,7 +387,7 @@ def main():
             slice_end=args.slice_end,
         )
     except Exception as ex:
-        print(f"\n❌ [FATAL ERROR] Unexpected error during drawing:")
+        print(f"\n[FATAL ERROR] Unexpected error during drawing:")
         print(f"   {type(ex).__name__}: {ex}")
         import traceback
 

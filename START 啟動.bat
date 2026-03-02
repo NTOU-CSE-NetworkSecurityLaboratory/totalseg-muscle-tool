@@ -26,6 +26,17 @@ if %errorlevel% neq 0 (
     exit /b 0
 )
 
+echo [INFO] Syncing environment...
+echo [資訊] 正在同步執行環境...
+uv sync
+if %errorlevel% neq 0 (
+    echo.
+    echo [ERROR] uv sync failed
+    echo [錯誤] uv sync 失敗
+    pause
+    exit /b 1
+)
+
 REM Run gui_pyside.py with uv
 uv run gui_pyside.py
 
