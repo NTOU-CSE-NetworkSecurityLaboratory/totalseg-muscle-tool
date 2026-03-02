@@ -21,6 +21,18 @@ VERTEBRAE_LABELS = (
 )
 
 
+def resolve_task_for_modality(task, modality):
+    modality_upper = str(modality).upper()
+    if modality_upper != "MRI":
+        return task
+
+    if task == "total":
+        return "total_mr"
+    if task == "spine":
+        return "vertebrae_mr"
+    return task
+
+
 def log_info(message):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}] {message}")
@@ -662,14 +674,7 @@ def main():
     log_info(f"Primary segmentation output dir: {seg_output}")
 
     log_info(f"Running segmentation task: {args.task} (Modality: {args.modality})")
-    task_to_run = args.task
-    if args.modality.upper() == "MRI":
-        if args.task == "total":
-            task_to_run = "total_mr"
-        elif args.task == "spine":
-            task_to_run = "vertebrae_mr"
-        # Others might not have MR equivalents yet, default to task name
-        
+    task_to_run = resolve_task_for_modality(args.task, args.modality)
     run_task(dicom_path, seg_output, task_to_run, fast=bool(args.fast))
 
     csv_name = f"mask_{args.task}" + ("_fast" if args.fast else "") + ".csv"
@@ -685,19 +690,21 @@ def main():
     )
     merge_statistics_to_csv(seg_output, str(output_csv))
 
-    if args.spine and args.task != "total":
-        log_info("Running spine segmentation task: total")
+    if args.spine and task_to_run not in {"total", "total_mr"}:
+        spine_task = "vertebrae_mr" if args.modality.upper() == "MRI" else "total"
+        log_info(f"Running spine segmentation task: {spine_task}")
         spine_folder_name = "segmentation_spine_fast"
         seg_spine_output = output_base / spine_folder_name
         seg_spine_output.mkdir(exist_ok=True)
         log_info(f"Spine segmentation output dir: {seg_spine_output}")
 
+        spine_roi_subset = None if spine_task == "vertebrae_mr" else VERTEBRAE_LABELS
         run_task(
             dicom_path,
             seg_spine_output,
-            "total",
+            spine_task,
             fast=True,
-            roi_subset=VERTEBRAE_LABELS,
+            roi_subset=spine_roi_subset,
         )
 
         spine_csv_name = "mask_spine_fast.csv"

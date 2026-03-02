@@ -1,6 +1,12 @@
 import sys
 import shutil
 import subprocess
+import re
+import json
+import os
+import random
+import string
+from datetime import datetime
 from pathlib import Path
 import numpy as np
 
@@ -9,9 +15,9 @@ from PySide6.QtWidgets import (
     QLabel, QPushButton, QComboBox, QCheckBox, QFrame,
     QLineEdit, QFileDialog, QPlainTextEdit, QGroupBox, QFormLayout,
     QTableWidget, QTableWidgetItem, QHeaderView, QProgressBar, QStackedWidget,
-    QMessageBox, QAbstractItemView, QSizePolicy
+    QMessageBox, QAbstractItemView, QSizePolicy, QDialog
 )
-from PySide6.QtCore import Qt, QProcess, QTimer, QSize
+from PySide6.QtCore import Qt, QProcess, QTimer, QSize, QProcessEnvironment, QEventLoop
 from PySide6.QtGui import QFont, QTextCursor, QIcon, QColor, QIntValidator
 
 # Try importing SimpleITK for erosion calculation
@@ -196,6 +202,8 @@ QLineEdit {
 }
 """
 
+ANSI_ESCAPE_RE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
+
 TASK_OPTIONS = [
     "abdominal_muscles",
     "aortic_sinuses",
@@ -235,6 +243,85 @@ TASK_OPTIONS = [
     "total",
 ]
 
+
+def filter_tasks_by_modality(tasks, modality):
+    if str(modality).upper() == "MRI":
+        return [t for t in tasks if t.endswith("_mr")]
+    return [t for t in tasks if not t.endswith("_mr")]
+
+
+LICENSE_APPLY_URL = "https://backend.totalsegmentator.com/license-academic/"
+
+
+class LicenseInputDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("TotalSegmentator 授權設定")
+        self.setModal(True)
+        self.resize(560, 220)
+
+        layout = QVBoxLayout(self)
+        info = QLabel(
+            "這個分割任務需要 TotalSegmentator 授權。<br>"
+            f"請先到官方頁面申請授權：<br>"
+            f"<a href='{LICENSE_APPLY_URL}'>{LICENSE_APPLY_URL}</a>"
+        )
+        info.setOpenExternalLinks(True)
+        info.setWordWrap(True)
+        layout.addWidget(info)
+
+        form = QFormLayout()
+        self.license_input = QLineEdit()
+        self.license_input.setPlaceholderText(
+            "可貼金鑰或指令，例如: aca_XXXX 或 totalseg_set_license -l aca_XXXX"
+        )
+        form.addRow("授權金鑰:", self.license_input)
+        layout.addLayout(form)
+
+        buttons = QHBoxLayout()
+        buttons.addStretch()
+        self.btn_cancel = QPushButton("取消")
+        self.btn_apply = QPushButton("套用金鑰")
+        self.btn_apply.setObjectName("primary_btn")
+        self.btn_cancel.clicked.connect(self.reject)
+        self.btn_apply.clicked.connect(self._on_apply)
+        buttons.addWidget(self.btn_cancel)
+        buttons.addWidget(self.btn_apply)
+        layout.addLayout(buttons)
+
+    def _on_apply(self):
+        if not self.license_input.text().strip():
+            QMessageBox.warning(self, "輸入錯誤", "請先輸入授權金鑰。")
+            return
+        self.accept()
+
+    def get_license_key(self):
+        return self.license_input.text().strip()
+
+
+def parse_license_input(raw_text):
+    text = (raw_text or "").strip()
+    if not text:
+        return ""
+
+    # Accept command style:
+    #   totalseg_set_license -l aca_XXXX
+    #   totalseg_set_license --license_number aca_XXXX
+    m = re.search(r"(?:^|\s)(?:-l|--license_number)\s+([^\s\"']+)", text)
+    if m:
+        return m.group(1).strip()
+
+    # Accept wrapped command string with quotes.
+    m = re.search(
+        r"(?:^|\s)(?:-l|--license_number)\s+[\"']([^\"']+)[\"']",
+        text,
+    )
+    if m:
+        return m.group(1).strip()
+
+    # Fallback: treat input as raw key.
+    return text
+
 class TotalSegApp(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -254,6 +341,7 @@ class TotalSegApp(QMainWindow):
         self.batch_queue = []
         self.current_batch_index = -1
         self.is_running = False
+        self._retry_same_task = False
         
         self.compare_ai_mask = ""
         self.compare_manual_mask = ""
@@ -341,8 +429,18 @@ class TotalSegApp(QMainWindow):
         # QProcess
         self.process = QProcess(self)
         self.process.setWorkingDirectory(str(BASE_DIR))
+        self.process.setProcessChannelMode(QProcess.MergedChannels)
+        proc_env = QProcessEnvironment.systemEnvironment()
+        proc_env.insert("PYTHONUNBUFFERED", "1")
+        self.process.setProcessEnvironment(proc_env)
+        self._stream_buffer = ""
+        self._stream_line_buffer = ""
+        self._ephemeral_active = False
+        self.stream_timer = QTimer(self)
+        self.stream_timer.setInterval(30)
+        self.stream_timer.timeout.connect(self.drain_process_output)
         self.process.readyReadStandardOutput.connect(self.handle_stdout)
-        self.process.readyReadStandardError.connect(self.handle_stderr)
+        self.process.readyRead.connect(self.drain_process_output)
         self.process.finished.connect(self.process_finished)
 
     def switch_mode(self, mode):
@@ -403,11 +501,12 @@ class TotalSegApp(QMainWindow):
         grid_layout.addRow("影像類別:", self.modality_combo)
         
         self.task_combo = QComboBox()
-        self.task_combo.addItems(TASK_OPTIONS)
         self.task_combo.setMaxVisibleItems(12)
         self.task_combo.view().setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         grid_layout.addRow("分割任務:", self.task_combo)
         
+        self.modality_combo.currentTextChanged.connect(self.apply_modality_filter)
+        self.apply_modality_filter(self.modality_combo.currentText())
         cfg_layout.addLayout(grid_layout)
 
         self.chk_spine = QCheckBox("標註脊椎層級 (需較長時間)")
@@ -849,7 +948,21 @@ class TotalSegApp(QMainWindow):
         except ValueError:
             self.erosion_mm_label.setText("迭代數值錯誤")
 
+    def apply_modality_filter(self, modality):
+        current_task = self.task_combo.currentText()
+        filtered_tasks = filter_tasks_by_modality(TASK_OPTIONS, modality)
+        self.task_combo.blockSignals(True)
+        self.task_combo.clear()
+        self.task_combo.addItems(filtered_tasks)
+        if current_task in filtered_tasks:
+            self.task_combo.setCurrentText(current_task)
+        self.task_combo.blockSignals(False)
+
     def append_log(self, text, is_html=False):
+        if self._ephemeral_active:
+            self.log_area.moveCursor(QTextCursor.End)
+            self.log_area.insertPlainText("\n")
+            self._ephemeral_active = False
         self.log_area.moveCursor(QTextCursor.End)
         if is_html and hasattr(self.log_area, "appendHtml"):
             self.log_area.appendHtml(text)
@@ -857,10 +970,12 @@ class TotalSegApp(QMainWindow):
             # QPlainTextEdit does not support appendHtml; fall back to plain text.
             self.log_area.insertPlainText(text)
         self.log_area.moveCursor(QTextCursor.End)
+        QApplication.processEvents(QEventLoop.ExcludeUserInputEvents, 5)
 
     def start_unified_process(self):
         self.log_area.clear()
         self.is_running = True
+        self._retry_same_task = False
         self.btn_start.setEnabled(False)
         self.btn_start.setText("初始化 AI 環境中...")
         
@@ -892,10 +1007,86 @@ class TotalSegApp(QMainWindow):
             self.reset_ui()
 
     def handle_stdout(self):
-        self.append_log(bytes(self.process.readAllStandardOutput()).decode("utf8"))
+        self.drain_process_output()
 
     def handle_stderr(self):
-        self.append_log(bytes(self.process.readAllStandardError()).decode("utf8"))
+        # MergedChannels mode routes stderr into stdout.
+        return
+
+    def append_stream_log(self, text):
+        clean = ANSI_ESCAPE_RE.sub("", text)
+        if not clean:
+            return
+        self._consume_stream_text(clean)
+
+    def _consume_stream_text(self, text):
+        for ch in text:
+            if ch == "\r":
+                if self._stream_line_buffer:
+                    self._render_ephemeral_line(self._stream_line_buffer)
+                    self._stream_line_buffer = ""
+                continue
+            if ch == "\n":
+                self._commit_stream_line(self._stream_line_buffer)
+                self._stream_line_buffer = ""
+                continue
+            self._stream_line_buffer += ch
+
+    def _replace_last_line(self, text):
+        content = self.log_area.toPlainText()
+        if not content:
+            new_content = text
+        elif content.endswith("\n"):
+            new_content = content + text
+        else:
+            parts = content.rsplit("\n", 1)
+            prefix = parts[0] + "\n" if len(parts) == 2 else ""
+            new_content = prefix + text
+        self.log_area.setPlainText(new_content)
+        self.log_area.moveCursor(QTextCursor.End)
+        QApplication.processEvents(QEventLoop.ExcludeUserInputEvents, 5)
+
+    def _render_ephemeral_line(self, text):
+        if not text:
+            return
+        if self._ephemeral_active:
+            self._replace_last_line(text)
+            return
+
+        existing = self.log_area.toPlainText()
+        if existing and not existing.endswith("\n"):
+            self.log_area.moveCursor(QTextCursor.End)
+            self.log_area.insertPlainText("\n")
+        self.log_area.moveCursor(QTextCursor.End)
+        self.log_area.insertPlainText(text)
+        self.log_area.moveCursor(QTextCursor.End)
+        self._ephemeral_active = True
+        QApplication.processEvents(QEventLoop.ExcludeUserInputEvents, 5)
+
+    def _commit_stream_line(self, text):
+        if self._ephemeral_active:
+            if text:
+                self._replace_last_line(text)
+            self.log_area.moveCursor(QTextCursor.End)
+            self.log_area.insertPlainText("\n")
+            self.log_area.moveCursor(QTextCursor.End)
+            self._ephemeral_active = False
+            QApplication.processEvents(QEventLoop.ExcludeUserInputEvents, 5)
+            return
+        self.log_area.moveCursor(QTextCursor.End)
+        if text:
+            self.log_area.insertPlainText(text)
+        self.log_area.insertPlainText("\n")
+        self.log_area.moveCursor(QTextCursor.End)
+        QApplication.processEvents(QEventLoop.ExcludeUserInputEvents, 5)
+
+    def drain_process_output(self):
+        chunk = bytes(self.process.readAll()).decode("utf8", errors="replace")
+        if not chunk:
+            return
+        self._stream_buffer += chunk
+        self.append_stream_log(self._stream_buffer)
+        self._stream_buffer = ""
 
     def fix_macos_torch_perms(self):
         """自動修復 macOS 上 torch_shm_manager 的執行權限"""
@@ -923,7 +1114,156 @@ class TotalSegApp(QMainWindow):
                 self.append_log(f"<div style='background-color: #fff3cd; color: #856404; padding: 5px; border-radius: 5px;'>{s}</div><br>", is_html=True)
             self.append_log("─"*30 + "\n")
 
+    def _classify_totalseg_error(self, log_text):
+        text = (log_text or "").lower()
+        if (
+            "jsondecodeerror" in text
+            and "totalsegmentator" in text
+            and "config.py" in text
+        ):
+            return "totalseg_config_json_broken"
+        if (
+            "requires a license" in text
+            or "not openly available" in text
+            or "missing_license" in text
+            or "invalid_license" in text
+            or "license number" in text
+        ):
+            return "license_missing_or_invalid"
+        return None
+
+    def _totalseg_config_path(self):
+        return Path.home() / ".totalsegmentator" / "config.json"
+
+    def _build_default_totalseg_config(self):
+        return {
+            "totalseg_id": "totalseg_" + "".join(
+                random.choices(string.ascii_uppercase + string.digits, k=8)
+            ),
+            "send_usage_stats": True,
+            "prediction_counter": 0,
+        }
+
+    def repair_totalseg_config_if_broken(self):
+        cfg_path = self._totalseg_config_path()
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if not cfg_path.exists():
+            cfg = self._build_default_totalseg_config()
+            cfg_path.write_text(json.dumps(cfg, indent=4), encoding="utf-8")
+            return True, f"[系統] 已建立 TotalSegmentator 設定檔: {cfg_path}\n"
+
+        try:
+            json.loads(cfg_path.read_text(encoding="utf-8"))
+            return True, ""
+        except Exception:
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup = cfg_path.parent / f"config.broken_{ts}.json"
+            try:
+                backup.write_text(cfg_path.read_text(encoding="utf-8"), encoding="utf-8")
+            except Exception:
+                pass
+
+            cfg = self._build_default_totalseg_config()
+            cfg_path.write_text(json.dumps(cfg, indent=4), encoding="utf-8")
+            return True, (
+                f"[系統] 偵測到損壞設定檔，已重建: {cfg_path}\n"
+                f"[系統] 損壞檔案備份於: {backup}\n"
+            )
+
+    def _mask_license_key(self, key):
+        if not key:
+            return ""
+        if len(key) <= 8:
+            return "*" * len(key)
+        return f"{key[:4]}{'*' * (len(key) - 8)}{key[-4:]}"
+
+    def apply_totalseg_license(self, license_key):
+        if shutil.which("uv") is None:
+            return False, "找不到 uv，無法寫入授權金鑰。"
+
+        script = (
+            "import os; "
+            "from totalsegmentator.config import set_license_number; "
+            "set_license_number(os.environ['TOTALSEG_LICENSE_KEY'])"
+        )
+        env = {k: v for k, v in os.environ.items()}
+        env["TOTALSEG_LICENSE_KEY"] = license_key
+
+        try:
+            result = subprocess.run(
+                ["uv", "run", "--no-sync", "python", "-c", script],
+                cwd=str(BASE_DIR),
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            if result.stdout:
+                self.append_log(result.stdout + ("" if result.stdout.endswith("\n") else "\n"))
+            if result.stderr:
+                self.append_log(result.stderr + ("" if result.stderr.endswith("\n") else "\n"))
+            return True, ""
+        except subprocess.CalledProcessError as e:
+            stderr = (e.stderr or "").strip()
+            stdout = (e.stdout or "").strip()
+            return False, (stderr or stdout or "授權寫入失敗。")
+
+    def prompt_totalseg_license_and_maybe_retry(self):
+        dialog = LicenseInputDialog(self)
+        if dialog.exec() != QDialog.Accepted:
+            self.append_log("[系統] 已取消授權設定，停止本次任務。\n")
+            self.reset_ui()
+            return True
+
+        key = parse_license_input(dialog.get_license_key())
+        if not key:
+            QMessageBox.warning(self, "輸入錯誤", "請輸入有效的授權金鑰或指令。")
+            self.reset_ui()
+            return True
+        ok, message = self.apply_totalseg_license(key)
+        if not ok:
+            QMessageBox.critical(self, "授權設定失敗", message)
+            self.append_log(f"[錯誤] 授權設定失敗: {message}\n")
+            self.reset_ui()
+            return True
+
+        self.append_log(f"[系統] 授權金鑰已設定: {self._mask_license_key(key)}\n")
+
+        retry = QMessageBox.question(
+            self,
+            "授權設定完成",
+            "授權已更新。要立即重跑剛剛失敗的任務嗎？",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        if retry == QMessageBox.Yes:
+            self.retry_current_failed_task()
+        else:
+            self.append_log("[系統] 授權已更新，請手動重新啟動任務。\n")
+            self.reset_ui()
+        return True
+
+    def retry_current_failed_task(self):
+        if self.current_batch_index < 0 or self.current_batch_index >= len(self.batch_queue):
+            self.append_log("[錯誤] 找不到可重跑的任務索引。\n")
+            self.reset_ui()
+            return
+        self._retry_same_task = True
+        self.btn_start.setEnabled(False)
+        self.append_log("[系統] 授權已更新，重新執行上一個失敗任務...\n")
+        QTimer.singleShot(0, self.run_next_batch_task)
+
     def process_finished(self):
+        self.drain_process_output()
+        if self._stream_buffer:
+            self.append_stream_log(self._stream_buffer)
+            self._stream_buffer = ""
+        if self._stream_line_buffer:
+            self._commit_stream_line(self._stream_line_buffer)
+            self._stream_line_buffer = ""
+        self._ephemeral_active = False
+        self.stream_timer.stop()
         if self.process_state == "sync":
             if self.process.exitCode() == 0:
                 # macOS 特殊處理：修復 torch_shm_manager 權限
@@ -943,7 +1283,18 @@ class TotalSegApp(QMainWindow):
                     status = "處理失敗"
                     self.task_table.item(row, 2).setText(status)
                     self.task_table.item(row, 2).setForeground(QColor("#dc3545"))
-                    self.diagnose_error(self.log_area.toPlainText())
+                    log_text = self.log_area.toPlainText()
+                    self.diagnose_error(log_text)
+                    issue = self._classify_totalseg_error(log_text)
+                    if issue == "totalseg_config_json_broken":
+                        _, msg = self.repair_totalseg_config_if_broken()
+                        if msg:
+                            self.append_log(msg)
+                        self.prompt_totalseg_license_and_maybe_retry()
+                        return
+                    if issue == "license_missing_or_invalid":
+                        self.prompt_totalseg_license_and_maybe_retry()
+                        return
             
             # 如果是最後一個任務，則重置 UI
             if self.current_batch_index >= len(self.batch_queue) - 1:
@@ -952,7 +1303,10 @@ class TotalSegApp(QMainWindow):
             self.run_next_batch_task()
 
     def run_next_batch_task(self):
-        self.current_batch_index += 1
+        if self._retry_same_task:
+            self._retry_same_task = False
+        else:
+            self.current_batch_index += 1
         if self.current_batch_index < len(self.batch_queue):
             row, dicom_path, out_path, slice_count, case_label = self.batch_queue[self.current_batch_index]
             self.task_table.item(row, 2).setText("執行分割中...")
@@ -963,7 +1317,7 @@ class TotalSegApp(QMainWindow):
             target_script = "seg.py"
 
             cmd_args = [
-                "run", target_script,
+                "run", "--no-sync", "python", "-u", target_script,
                 "--dicom", dicom_path,
                 "--out", out_path,
                 "--task", self.task_combo.currentText(),
@@ -999,6 +1353,10 @@ class TotalSegApp(QMainWindow):
                     cmd_args.extend(["--slice_end", str(end_val)])
 
             self.process_state = "seg"
+            self._stream_buffer = ""
+            self._stream_line_buffer = ""
+            self._ephemeral_active = False
+            self.stream_timer.start()
             self.process.start("uv", cmd_args)
         else:
             self.append_log("\n[完成] 所有自動分割任務已處理完畢。\n")
@@ -1007,6 +1365,10 @@ class TotalSegApp(QMainWindow):
 
     def reset_ui(self):
         self.is_running = False
+        self.stream_timer.stop()
+        self._stream_buffer = ""
+        self._stream_line_buffer = ""
+        self._ephemeral_active = False
         self.btn_start.setText("啟動 AI 自動分割任務")
         self.btn_start.setEnabled(True)
         self.btn_select_src.setEnabled(True)

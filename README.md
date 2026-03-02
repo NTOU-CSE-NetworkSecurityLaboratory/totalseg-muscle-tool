@@ -152,6 +152,8 @@ Core tests include:
 - **Non-ASCII path causing drawing failure**: `draw.py` checks if path is ASCII. Move project/DICOM to pure English path.
 - **Slow on first run**: TotalSegmentator may need to download model weights, and CPU inference is very slow.
 - **GPU/CPU detection**: GUI displays detected device (`torch.cuda.is_available()`).
+- **License-gated tasks (e.g. `tissue_4_types`)**: GUI now shows a license dialog with a clickable official link (`https://backend.totalsegmentator.com/license-academic/`), supports pasting either a raw key or a command (`totalseg_set_license -l <KEY>`), then can retry the failed case.
+- **`JSONDecodeError` from TotalSegmentator config**: GUI auto-repairs broken `~/.totalsegmentator/config.json` and prompts license input again.
 
 #### **Tool 2 (Batch Processing)**
 - **No DICOM folders found**: Check max search depth setting or folder structure.
