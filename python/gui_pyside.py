@@ -2,16 +2,17 @@ import sys
 import shutil
 import subprocess
 from pathlib import Path
+import numpy as np
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
     QLabel, QPushButton, QComboBox, QCheckBox, QFrame,
     QLineEdit, QFileDialog, QPlainTextEdit, QGroupBox, QFormLayout,
     QTableWidget, QTableWidgetItem, QHeaderView, QProgressBar, QStackedWidget,
-    QMessageBox, QAbstractItemView
+    QMessageBox, QAbstractItemView, QSizePolicy
 )
 from PySide6.QtCore import Qt, QProcess, QTimer, QSize
-from PySide6.QtGui import QFont, QTextCursor, QIcon, QColor
+from PySide6.QtGui import QFont, QTextCursor, QIcon, QColor, QIntValidator
 
 # Try importing SimpleITK for erosion calculation
 try:
@@ -37,6 +38,43 @@ if IS_BUNDLED:
             shutil.copy2(src, dst)
 else:
     BASE_DIR = Path(__file__).parent
+
+
+def resolve_app_icon_path():
+    """
+    自動尋找應用程式 icon。
+    可放置於：
+    - 專案根目錄：app_icon.ico / app_icon.png
+    - python 目錄：app_icon.ico / app_icon.png
+    - 打包後 EXE 同層：app_icon.ico / app_icon.png
+    """
+    candidates = []
+    if IS_BUNDLED:
+        exe_dir = Path(sys.executable).parent
+        candidates.extend(
+            [
+                exe_dir / "app_icon.ico",
+                exe_dir / "app_icon.png",
+                BASE_DIR / "app_icon.ico",
+                BASE_DIR / "app_icon.png",
+            ]
+        )
+    else:
+        python_dir = BASE_DIR
+        repo_root = python_dir.parent
+        candidates.extend(
+            [
+                repo_root / "app_icon.ico",
+                repo_root / "app_icon.png",
+                python_dir / "app_icon.ico",
+                python_dir / "app_icon.png",
+            ]
+        )
+
+    for path in candidates:
+        if path.exists():
+            return path
+    return None
 
 # Modern QSS Style for a premium look
 MODERN_STYLE = """
@@ -203,13 +241,21 @@ class TotalSegApp(QMainWindow):
         self.setWindowTitle("TotalSegmentator AI 影像管理系統 v0.0.1")
         self.resize(1150, 850)
         self.setStyleSheet(MODERN_STYLE)
+        icon_path = resolve_app_icon_path()
+        if icon_path:
+            app_icon = QIcon(str(icon_path))
+            self.setWindowIcon(app_icon)
+            if QApplication.instance() is not None:
+                QApplication.instance().setWindowIcon(app_icon)
 
         # State Variables
         self.spacing_xy = None
+        self.folder_slice_counts = {}
         self.batch_queue = []
         self.current_batch_index = -1
         self.is_running = False
         
+        self.compare_ai_mask = ""
         self.compare_manual_mask = ""
 
         # 智慧解決方案引擎 (Solution Engine)
@@ -248,7 +294,7 @@ class TotalSegApp(QMainWindow):
         self.btn_mode_seg.clicked.connect(lambda: self.switch_mode("seg"))
         nav_layout.addWidget(self.btn_mode_seg)
 
-        self.btn_mode_compare = QPushButton("影像對比分析 (Manual Compare)")
+        self.btn_mode_compare = QPushButton("影像比對分析")
         self.btn_mode_compare.setObjectName("mode_btn")
         self.btn_mode_compare.setProperty("active", False)
         self.btn_mode_compare.clicked.connect(lambda: self.switch_mode("compare"))
@@ -265,7 +311,7 @@ class TotalSegApp(QMainWindow):
 
         # --- Content Area (Stacked) ---
         self.content_stack = QStackedWidget()
-        self.main_v_layout.addWidget(self.content_stack)
+        self.main_v_layout.addWidget(self.content_stack, 3)
 
         # PAGE 1: Segmentation
         self.page_seg = QWidget()
@@ -285,11 +331,12 @@ class TotalSegApp(QMainWindow):
         self.log_area = QPlainTextEdit()
         self.log_area.setReadOnly(True)
         self.log_area.setFont(QFont("Monaco", 9)) if sys.platform == "darwin" else self.log_area.setFont(QFont("Consolas", 9))
-        self.log_area.setMaximumHeight(150)
+        self.log_area.setMinimumHeight(320)
+        self.log_area.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.log_area.setPlaceholderText("系統執行日誌將顯示於此...")
         log_layout.addWidget(self.log_area)
         
-        self.main_v_layout.addWidget(self.log_container)
+        self.main_v_layout.addWidget(self.log_container, 4)
 
         # QProcess
         self.process = QProcess(self)
@@ -375,7 +422,7 @@ class TotalSegApp(QMainWindow):
 
         erosion_box = QHBoxLayout()
         erosion_box.addWidget(QLabel("肌肉收縮迭代 (Erosion):"))
-        self.erosion_input = QLineEdit("7")
+        self.erosion_input = QLineEdit("2")
         self.erosion_input.setFixedWidth(40)
         self.erosion_input.textChanged.connect(self.calc_erosion)
         erosion_box.addWidget(self.erosion_input)
@@ -393,11 +440,13 @@ class TotalSegApp(QMainWindow):
         range_layout.addWidget(QLabel("從"))
         self.slice_start_input = QLineEdit("1")
         self.slice_start_input.setFixedWidth(40)
+        self.slice_start_input.setValidator(QIntValidator(1, 999999, self))
         range_layout.addWidget(self.slice_start_input)
         range_layout.addWidget(QLabel("至"))
         self.slice_end_input = QLineEdit("")
         self.slice_end_input.setPlaceholderText("末")
         self.slice_end_input.setFixedWidth(40)
+        self.slice_end_input.setValidator(QIntValidator(1, 999999, self))
         range_layout.addWidget(self.slice_end_input)
         range_layout.addWidget(QLabel("張"))
         cfg_layout.addWidget(range_box)
@@ -417,6 +466,7 @@ class TotalSegApp(QMainWindow):
         self.out_label.setStyleSheet("font-size: 10px; color: #666;")
         out_layout.addWidget(self.out_label)
         left_layout.addWidget(self.out_group)
+        self.out_group.setVisible(False)
         
         left_layout.addStretch()
         layout.addWidget(left_col)
@@ -466,36 +516,39 @@ class TotalSegApp(QMainWindow):
         layout.setContentsMargins(40, 40, 40, 40)
         layout.setSpacing(20)
 
-        header_lbl = QLabel("人工標註 vs AI 自動分割對比分析")
+        header_lbl = QLabel("人工標註與 AI 自動分割比對分析")
         header_lbl.setStyleSheet("font-size: 18px; font-weight: bold; color: #495057;")
         layout.addWidget(header_lbl)
         
-        desc_lbl = QLabel("請選取 NIfTI (.nii.gz) 或 NRRD (.nrrd) 檔案，系統將計算 Dice 系數與體積差異。")
+        desc_lbl = QLabel(
+            "請選取 AI 與人工標註的單一 NIfTI (.nii/.nii.gz) 或 NRRD (.nrrd) 檔案，"
+            "系統將計算 Dice 系數與面積差異。"
+        )
         desc_lbl.setStyleSheet("color: #6c757d;")
         layout.addWidget(desc_lbl)
         
-        comp_group = QGroupBox("分析檔案選取")
+        comp_group = QGroupBox("比對檔案選取")
         comp_layout = QFormLayout(comp_group)
         comp_layout.setSpacing(15)
         
         # AI Mask Path
         self.ai_mask_path_lbl = QLabel("尚未選取檔案")
         self.ai_mask_path_lbl.setWordWrap(True)
-        btn_ai = QPushButton("選取 AI 分割結果 (NII/NRRD)")
-        btn_ai.clicked.connect(self.select_compare_ai)
-        comp_layout.addRow(btn_ai, self.ai_mask_path_lbl)
+        self.btn_select_compare_ai = QPushButton("選取 AI 比對檔案 (.nii.gz)")
+        self.btn_select_compare_ai.clicked.connect(self.select_compare_ai)
+        comp_layout.addRow(self.btn_select_compare_ai, self.ai_mask_path_lbl)
         
         # Manual Mask Path
         self.manual_mask_path_lbl = QLabel("尚未選取檔案")
         self.manual_mask_path_lbl.setWordWrap(True)
-        btn_manual = QPushButton("選取人工標註結果 (NII/NRRD)")
-        btn_manual.clicked.connect(self.select_compare_manual)
-        comp_layout.addRow(btn_manual, self.manual_mask_path_lbl)
+        self.btn_select_compare_manual = QPushButton("選取人工比對檔案 (NIfTI/NRRD)")
+        self.btn_select_compare_manual.clicked.connect(self.select_compare_manual)
+        comp_layout.addRow(self.btn_select_compare_manual, self.manual_mask_path_lbl)
         
         layout.addWidget(comp_group)
 
         # Action
-        self.btn_run_compare = QPushButton("開始執行比對分析")
+        self.btn_run_compare = QPushButton("開始執行影像比對分析")
         self.btn_run_compare.setObjectName("primary_btn")
         self.btn_run_compare.setMinimumHeight(55)
         self.btn_run_compare.setEnabled(False)
@@ -506,14 +559,14 @@ class TotalSegApp(QMainWindow):
 
     # --- Comparison Methods ---
     def select_compare_ai(self):
-        path, _ = QFileDialog.getOpenFileName(self, "選取 AI 分割結果 (NII/NRRD)", "", "Medical Images (*.nii *.nii.gz *.nrrd)")
+        path, _ = QFileDialog.getOpenFileName(self, "選取 AI 比對檔案 (.nii.gz)", "", "NIfTI GZ (*.nii.gz)")
         if path:
             self.compare_ai_mask = path
             self.ai_mask_path_lbl.setText(path)
             self.check_compare_ready()
 
     def select_compare_manual(self):
-        path, _ = QFileDialog.getOpenFileName(self, "選取人工標註結果 (NII/NRRD)", "", "Medical Images (*.nii *.nii.gz *.nrrd)")
+        path, _ = QFileDialog.getOpenFileName(self, "選取人工比對檔案 (NIfTI/NRRD)", "", "Medical Images (*.nii *.nii.gz *.nrrd)")
         if path:
             self.compare_manual_mask = path
             self.manual_mask_path_lbl.setText(path)
@@ -524,7 +577,7 @@ class TotalSegApp(QMainWindow):
 
     def run_compare_analysis(self):
         self.log_area.clear()
-        self.append_log("系統：開始執行對比分析...\n")
+        self.append_log("系統：開始執行比對分析...\n")
         self.btn_run_compare.setEnabled(False)
         
         try:
@@ -533,15 +586,22 @@ class TotalSegApp(QMainWindow):
 
             ai_img = sitk.ReadImage(self.compare_ai_mask)
             manual_img = sitk.ReadImage(self.compare_manual_mask)
-            
-            ai_arr = sitk.GetArrayFromImage(ai_img)
-            manual_arr = sitk.GetArrayFromImage(manual_img)
+
+            if ai_img.GetSize() != manual_img.GetSize() or ai_img.GetSpacing() != manual_img.GetSpacing():
+                resampler = sitk.ResampleImageFilter()
+                resampler.SetReferenceImage(manual_img)
+                resampler.SetInterpolator(sitk.sitkNearestNeighbor)
+                resampler.SetDefaultPixelValue(0)
+                ai_img = resampler.Execute(ai_img)
+
+            ai_arr = sitk.GetArrayFromImage(ai_img) > 0
+            manual_arr = sitk.GetArrayFromImage(manual_img) > 0
             spacing = manual_img.GetSpacing()
             
             # Find the slice annotated by the doctor
             slice_idx = -1
             for i in range(manual_arr.shape[0]):
-                if np.any(manual_arr[i] > 0):
+                if np.any(manual_arr[i]):
                     slice_idx = i
                     break
                     
@@ -549,9 +609,8 @@ class TotalSegApp(QMainWindow):
                 self.append_log("[錯誤] 無法在「人工標註結果」中找到任何標註 (皆為 0)。\n")
                 return
 
-            import numpy as np
-            ai_slice = ai_arr[slice_idx] > 0
-            manual_slice = manual_arr[slice_idx] > 0
+            ai_slice = ai_arr[slice_idx]
+            manual_slice = manual_arr[slice_idx]
             
             # Dice
             intersection = np.logical_and(ai_slice, manual_slice).sum()
@@ -579,7 +638,7 @@ class TotalSegApp(QMainWindow):
                 self.append_log("<span style='color: #dc3545; font-weight: bold;'>評估：吻合度偏低，建議人工檢視</span><br>", is_html=True)
                 
         except Exception as e:
-            self.append_log(f"[錯誤] 比對失敗：{str(e)}\n")
+            self.append_log(f"[錯誤] 比對分析失敗：{str(e)}\n")
         finally:
             self.btn_run_compare.setEnabled(True)
 
@@ -618,8 +677,62 @@ class TotalSegApp(QMainWindow):
                     pass
         return False
 
+    def get_dicom_slice_count(self, folder):
+        """回傳資料夾中的切片張數；若無法辨識則回傳 None。"""
+        if sitk:
+            try:
+                reader = sitk.ImageSeriesReader()
+                dicom_names = reader.GetGDCMSeriesFileNames(str(folder))
+                if dicom_names:
+                    return len(dicom_names)
+            except Exception:
+                pass
+
+        files = [f for f in folder.iterdir() if f.is_file() and not f.name.startswith(".")]
+        if not files:
+            return None
+
+        dcm_count = len([f for f in files if f.suffix.lower() == ".dcm"])
+        if dcm_count > 0:
+            return dcm_count
+        return len(files)
+
+    def normalize_slice_range(self, start_str, end_str, slice_count):
+        """
+        將輸入切片範圍正規化為合法值。
+        回傳: (start_val, end_val, warn_message, error_message)
+        """
+        start_text = start_str.strip() if start_str else "1"
+        end_text = end_str.strip() if end_str else ""
+
+        if not start_text.isdigit() or (end_text and not end_text.isdigit()):
+            return None, None, None, "切片範圍必須為數字。"
+
+        start_val = int(start_text)
+        if start_val < 1:
+            return None, None, None, "起始層級必須大於或等於 1。"
+
+        end_val = int(end_text) if end_text else None
+        if end_val is not None and start_val > end_val:
+            return None, None, None, "起始層級不能大於結束層級。"
+
+        warn_message = None
+        if slice_count and slice_count > 0:
+            if start_val > slice_count:
+                return None, None, None, f"起始層級 {start_val} 超過此病患切片上限 {slice_count}。"
+            if end_val is None:
+                end_val = slice_count
+            elif end_val > slice_count:
+                warn_message = f"結束層級 {end_val} 超過此病患切片上限 {slice_count}，已自動調整為 {slice_count}。"
+                end_val = slice_count
+            if start_val > end_val:
+                return None, None, None, "起始層級不能大於結束層級。"
+
+        return start_val, end_val, warn_message, None
+
     def scan_directory(self, root_path):
         self.task_table.setRowCount(0)
+        self.folder_slice_counts = {}
         root = Path(root_path)
         valid_folders = []
         
@@ -643,6 +756,8 @@ class TotalSegApp(QMainWindow):
 
         self.task_table.setRowCount(len(valid_folders))
         for i, folder in enumerate(valid_folders):
+            slice_count = self.get_dicom_slice_count(folder)
+            self.folder_slice_counts[str(folder)] = slice_count
             chk = QCheckBox()
             chk.setChecked(True)
             chk_widget = QWidget()
@@ -657,15 +772,38 @@ class TotalSegApp(QMainWindow):
                 display_name = str(folder.relative_to(root)) if folder != root else folder.name
             except ValueError:
                 display_name = str(folder)
+
+            if slice_count and slice_count > 0:
+                display_name = f"{display_name} ({slice_count} 張)"
                 
             path_item = QTableWidgetItem(display_name)
             path_item.setData(Qt.UserRole, str(folder))
             self.task_table.setItem(i, 1, path_item)
             
-            status_item = QTableWidgetItem("待處理 (Ready)")
+            if slice_count and slice_count > 0:
+                status_text = f"待處理 (共 {slice_count} 張)"
+            else:
+                status_text = "待處理 (Ready)"
+            status_item = QTableWidgetItem(status_text)
             self.task_table.setItem(i, 2, status_item)
             
         self.update_ui_state()
+
+        if len(valid_folders) == 1:
+            only_key = str(valid_folders[0])
+            only_count = self.folder_slice_counts.get(only_key)
+            if only_count and only_count > 0:
+                self.slice_start_input.setText("1")
+                self.slice_end_input.setText(str(only_count))
+                self.range_box_widget.setTitle(f"切片範圍計算 (選填)｜單一病患共 {only_count} 張")
+                self.append_log(f"[系統] 已載入單一病患，共 {only_count} 張切片，切片範圍已預填為 1 ~ {only_count}。\n")
+            else:
+                self.range_box_widget.setTitle("切片範圍計算 (選填)")
+        else:
+            self.range_box_widget.setTitle("切片範圍計算 (選填)｜多病患將逐案自動夾限")
+            self.slice_end_input.setText("")
+            self.slice_end_input.setPlaceholderText("依各病患上限自動夾限")
+            self.append_log("[系統] 多病患模式：切片範圍會依每位病患切片上限自動限制。\n")
 
         # 精進 Spacing 偵測邏輯，解決 ITK 無法識別單一檔案導致 N/A 的問題
         if sitk:
@@ -731,17 +869,12 @@ class TotalSegApp(QMainWindow):
             chk_widget = self.task_table.cellWidget(i, 0)
             if chk_widget.layout().itemAt(0).widget().isChecked():
                 dicom_path = self.task_table.item(i, 1).data(Qt.UserRole)
-                out_root = self.out_label.text()
-                
-                # 自動路徑解析
-                if "預設" in out_root or not out_root:
-                    out_root = str(Path(dicom_path).parent / (Path(dicom_path).name + "_output"))
-                
-                out_path = out_root
-                if self.task_table.rowCount() > 1:
-                    out_path = str(Path(out_root) / Path(dicom_path).name)
+                case_label = self.task_table.item(i, 1).text()
+                slice_count = self.folder_slice_counts.get(str(dicom_path))
+                # seg.py 會自行組成 <dicom_name>_output；這裡只傳入父層根目錄
+                out_path = str(Path(dicom_path).parent)
 
-                self.batch_queue.append((i, dicom_path, out_path))
+                self.batch_queue.append((i, dicom_path, out_path, slice_count, case_label))
                 
         self.current_batch_index = -1
         QTimer.singleShot(100, self.run_setup_and_segmentation)
@@ -821,7 +954,7 @@ class TotalSegApp(QMainWindow):
     def run_next_batch_task(self):
         self.current_batch_index += 1
         if self.current_batch_index < len(self.batch_queue):
-            row, dicom_path, out_path = self.batch_queue[self.current_batch_index]
+            row, dicom_path, out_path, slice_count, case_label = self.batch_queue[self.current_batch_index]
             self.task_table.item(row, 2).setText("執行分割中...")
             self.task_table.item(row, 2).setForeground(QColor("#0d6efd"))
             self.prog_bar_lbl.setText(f"目前進度：第 {self.current_batch_index + 1} / {len(self.batch_queue)} 個任務")
@@ -845,22 +978,25 @@ class TotalSegApp(QMainWindow):
             if self.range_box_widget.isChecked():
                 start_str = self.slice_start_input.text()
                 end_str = self.slice_end_input.text()
-                
-                if not start_str.isdigit() or (end_str and not end_str.isdigit()):
-                    QMessageBox.warning(self, "輸入錯誤", "切片範圍必須為數字！")
+                start_val, end_val, warn_message, error_message = self.normalize_slice_range(
+                    start_str=start_str,
+                    end_str=end_str,
+                    slice_count=slice_count,
+                )
+
+                if error_message:
+                    self.task_table.item(row, 2).setText("切片範圍錯誤")
+                    self.task_table.item(row, 2).setForeground(QColor("#dc3545"))
+                    self.append_log(f"[錯誤] {case_label}: {error_message}\n")
+                    QTimer.singleShot(0, self.run_next_batch_task)
                     return
 
-                start_val = int(start_str)
-                if end_str:
-                    end_val = int(end_str)
-                    if start_val > end_val:
-                        QMessageBox.warning(self, "邏輯錯誤", "起始層級不能大於結束層級！")
-                        return
+                if warn_message:
+                    self.append_log(f"[系統] {case_label}: {warn_message}\n")
 
-                if start_str:
-                    cmd_args.extend(["--slice_start", start_str])
-                if end_str:
-                    cmd_args.extend(["--slice_end", end_str])
+                cmd_args.extend(["--slice_start", str(start_val)])
+                if end_val is not None:
+                    cmd_args.extend(["--slice_end", str(end_val)])
 
             self.process_state = "seg"
             self.process.start("uv", cmd_args)

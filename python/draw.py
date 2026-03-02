@@ -186,7 +186,7 @@ def dicom_to_overlay_png(
     show_spine=True,
     task_name="abdominal_muscles",
     fast=False,
-    erosion_iters=7,
+    erosion_iters=2,
     eroded_out_dir: Path = None,
     slice_start=None,
     slice_end=None,
@@ -323,8 +323,8 @@ def main():
     parser.add_argument(
         "--erosion_iters",
         type=int,
-        default=7,
-        help="Erosion iterations for eroded PNG output (default: 7)",
+        default=2,
+        help="Erosion iterations for eroded PNG output (default: 2)",
     )
     parser.add_argument("--slice_start", type=int, default=None, help="Start slice (1-indexed)")
     parser.add_argument("--slice_end", type=int, default=None, help="End slice (1-indexed)")

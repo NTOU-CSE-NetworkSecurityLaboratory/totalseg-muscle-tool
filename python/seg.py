@@ -61,9 +61,9 @@ def read_image_with_ascii_fallback(image_path):
                 raise first_error
 
 
-def calculate_slice_hu_with_erosion(slice_mask, slice_ct, erosion_iters=7):
+def calculate_slice_hu_with_erosion(slice_mask, slice_ct, erosion_iters=2):
     """
-    使用侵蝕 7 次計算 HU（與醫生測量最接近，誤差 1.08 HU）
+    使用侵蝕次數計算 HU。
 
     Args:
         slice_mask: 2D mask array
@@ -77,7 +77,7 @@ def calculate_slice_hu_with_erosion(slice_mask, slice_ct, erosion_iters=7):
 
     original_pixels = np.sum(slice_mask > 0)
 
-    # 步驟 1：侵蝕 N 次（預設 7；去除邊緣約 4.6 mm）
+    # 步驟 1：侵蝕 N 次
     kernel = np.ones((3, 3), np.uint8)
     erosion_iters = max(int(erosion_iters), 0)
     if erosion_iters > 0:
@@ -109,7 +109,7 @@ def calculate_slice_hu_with_erosion(slice_mask, slice_ct, erosion_iters=7):
 
 
 def get_mask_area_volume_and_hu(
-    nii_path, ct_arr, spacing, resampler, erosion_iters=7, slice_start=None, slice_end=None
+    nii_path, ct_arr, spacing, resampler, erosion_iters=2, slice_start=None, slice_end=None
 ):
     """
     計算每個 slice 的面積、總體積、以及每個 slice 的平均 HU (受切片範圍過濾)
@@ -293,7 +293,7 @@ def merge_bilateral_std_data(area_results, hu_results, std_results):
 
 
 def export_areas_and_volumes_to_csv(
-    mask_dir, output_csv, dicom_dir, erosion_iters=7, slice_start=None, slice_end=None
+    mask_dir, output_csv, dicom_dir, erosion_iters=2, slice_start=None, slice_end=None
 ):
     """
     # 修改：
@@ -628,8 +628,8 @@ def main():
     parser.add_argument(
         "--erosion_iters",
         type=int,
-        default=7,
-        help="Erosion iterations for HU calculation (default: 7)",
+        default=2,
+        help="Erosion iterations for HU calculation (default: 2)",
     )
     parser.add_argument("--modality", type=str, default="CT", help="Imaging modality (CT or MRI)")
     parser.add_argument("--slice_start", type=int, default=None, help="Start slice (1-indexed)")

@@ -13,9 +13,13 @@ A medical image segmentation tool based on TotalSegmentator for CT image muscle 
 #### **Tool 1: Unified AI Analysis (Unified UI)**
 - **MRI & CT Support**: Select modality to automatically use `total_mr` or standard CT models.
 - **Partial Volume Calculation**: Specify a slice range (e.g., Slices 10-50) for targeted volumetric analysis.
+  - Single-patient mode auto-fills total slice count (`1 ~ N`).
+  - Multi-patient mode applies per-case slice limit clamping automatically.
 - **Smart Detection**: Recursive scanning of nested folders and identification of extension-less DICOMs.
 - **Solution Engine**: Professional error diagnosis that translates technical logs into medical-friendly advice.
-- **Manual vs AI Comparison**: Integrated DICE coefficient and volume difference analysis.
+- **Manual vs AI Comparison**: Integrated DICE coefficient and area difference analysis.
+  - AI compare file is constrained to `.nii.gz`.
+- **App Icon Support**: Place `app_icon.ico` (or `app_icon.png`) in repo root or `python/` to auto-apply icon.
 
 ### Quick Start
 
@@ -97,13 +101,13 @@ uv run gui_pyside.py  # Switch to Comparison tab in unified UI
 - `--fast 1`: Fast mode
 - `--spine 1`: Additional spine segmentation
 - `--auto_draw 1`: Auto-generate PNG overlays
-- `--erosion_iters`: Erosion iterations (default: 7)
+- `--erosion_iters`: Erosion iterations (default: 2)
 
 ### Calculation Logic
 
 - **Area (cm²)**: Mask pixels per slice × `spacing_x × spacing_y / 100`
 - **Volume (cm³)**: Total mask pixels × `spacing_x × spacing_y × spacing_z / 1000`
-- **Slice average HU**: Morphological erosion on mask (default 7 iterations, reduced to 3 or none if too few pixels), then average HU of eroded region
+- **Slice average HU**: Morphological erosion on mask (default 2 iterations, reduced to 3 or none if too few pixels), then average HU of eroded region
 - **Slice HU std**: Same erosion process, then standard deviation of HU in eroded region
 - **L/R muscle merge (HU)**: Area-weighted average for each slice
 - **Summary merge (mean_hu)**: Weighted by pixelcount
@@ -135,15 +139,12 @@ For engineering handoff and AI-assisted development context, see:
 
 ```bash
 cd python
-uv run python test_compare.py
+uv run pytest -q
 ```
 
-Test items:
-- Dice coefficient calculation (4 cases)
-- Area calculation (4 cases)
-- Slice detection (5 cases)
-
-All tests passing indicates core logic is working properly.
+Core tests include:
+- command assembly (`test_auto_draw_cmd.py`)
+- GUI smoke checks for defaults/copy/path rules (`test_gui_pyside_smoke.py`)
 
 ### FAQ
 
@@ -180,9 +181,12 @@ This project is open source for research and educational purposes.
 #### **功能 1：統一 AI 分析介面 (Unified UI)**
 - **MRI & CT 雙模態支援**：切換影像類別自動調用 `total_mr` 或 CT 專屬模型。
 - **特定切片範圍計算**：可指定張數範圍（如第 20 到 40 張）進行精確的局部體積統計。
+  - 單一病患載入時會自動預填 `1 ~ 總張數`。
+  - 多病患模式會依每位病患切片上限自動防呆夾限。
 - **強健掃描邏輯**：自動識別深層嵌套目錄與無副檔名的 DICOM 檔案。
 - **智慧診斷引擎**：發生報錯時自動提供白話文「解決建議」，不需閱讀代碼。
-- **手動 vs AI 比較**：整合 DICE 系數與體積差異分析。
+- **手動 vs AI 比較**：整合 DICE 系數與面積差異分析（AI 比對檔案限定 `.nii.gz`）。
+- **應用程式圖示支援**：在專案根目錄或 `python/` 放置 `app_icon.ico`（或 `app_icon.png`）即可自動套用。
 
 ### 快速開始
 
@@ -264,13 +268,13 @@ uv run gui_pyside.py  # 在統一介面中切換至「比較分析」分頁
 - `--fast 1`：快速模式（較快但精度可能下降）
 - `--spine 1`：額外執行脊椎分割
 - `--auto_draw 1`：分割完成後自動產生 PNG 疊圖
-- `--erosion_iters`：HU 計算用的侵蝕次數（預設：7）
+- `--erosion_iters`：HU 計算用的侵蝕次數（預設：2）
 
 ### 計算邏輯
 
 - **面積（cm²）**：每層遮罩像素數 × `spacing_x × spacing_y / 100`
 - **體積（cm³）**：所有遮罩像素數 × `spacing_x × spacing_y × spacing_z / 1000`
-- **層平均 HU**：對該層遮罩做形態學侵蝕（預設 7 次，像素太少會降為 3 次或不侵蝕），取侵蝕後區域的 HU 平均
+- **層平均 HU**：對該層遮罩做形態學侵蝕（預設 2 次，像素太少會降為 3 次或不侵蝕），取侵蝕後區域的 HU 平均
 - **層 HU 標準差**：同上侵蝕流程，取侵蝕後區域的 HU 標準差
 - **左右合併（HU）**：以每層的左右面積做加權平均
 - **摘要合併（mean_hu）**：以 pixelcount 做加權平均
@@ -302,15 +306,12 @@ totalseg-muscle-tool/
 
 ```bash
 cd python
-uv run python test_compare.py
+uv run pytest -q
 ```
 
-測試項目：
-- Dice 係數計算（4 個案例）
-- 面積計算（4 個案例）
-- 層數偵測（5 個案例）
-
-所有測試通過表示核心邏輯運作正常。
+目前核心測試包含：
+- 命令組裝測試（`test_auto_draw_cmd.py`）
+- GUI smoke 測試（`test_gui_pyside_smoke.py`，含預設值/文案/路徑規則）
 
 ### 常見問題
 
