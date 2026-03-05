@@ -1,0 +1,2 @@
+"""pywebview Tailwind shell package."""
+

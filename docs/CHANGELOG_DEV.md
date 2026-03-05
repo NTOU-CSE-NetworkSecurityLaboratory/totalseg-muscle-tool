@@ -32,3 +32,24 @@
 1. 讓摘要 `mean_hu` 可選擇「依 range 重算」模式。
 2. CSV 加 metadata 區塊（range, erosion, modality, task）。
 3. 範圍模式新增「只輸出區間切片」選項，避免 0 值誤讀。
+
+## v0.0.3 (2026-03-05)
+
+- Added WebView shell hardening and lifecycle cleanup:
+  - Window close now triggers process shutdown.
+  - Added backend `shutdown()` + `atexit` guard.
+- Added license recovery flow in WebView:
+  - Detect license-related failure.
+  - Open license modal.
+  - Apply key and retry failed case.
+- Added TotalSegmentator config recovery in WebView backend.
+- Added session log persistence (`totalseg_batch_logs/batch_*.log`).
+- Improved log stream handling:
+  - Keep tqdm-style carriage-return updates.
+  - Ignore empty output lines to prevent timestamp-only spam.
+- Refined UI structure:
+  - Diagnostics moved into Runtime Logs card to reduce layout crowding.
+  - Reduced saturation toward PySide-like blue-gray palette.
+  - Log panel switched to white background for readability.
+- Added/reworked documentation for WebView shell in
+  `python/pywebview_tailwind_shell/README.md`.

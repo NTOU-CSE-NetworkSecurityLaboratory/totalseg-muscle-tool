@@ -45,3 +45,8 @@
   - 影響：分割品質與速度
 - `auto_draw`
   - 影響：是否輸出 PNG，不影響 CSV 數值
+
+## WebView Reference
+
+- Shell UI doc: `python/pywebview_tailwind_shell/README.md`
+- Readiness note: `docs/WEBVIEW_UI_STATUS.md`

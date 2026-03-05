@@ -6,9 +6,19 @@ import json
 import os
 import random
 import string
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 import numpy as np
+
+from core.shared_core import (
+    build_seg_command,
+    compare_masks as core_compare_masks,
+    filter_tasks_by_modality as core_filter_tasks_by_modality,
+    get_dicom_slice_count as core_get_dicom_slice_count,
+    has_dicom_files as core_has_dicom_files,
+    normalize_slice_range as core_normalize_slice_range,
+    scan_dicom_cases as core_scan_dicom_cases,
+)
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
@@ -245,9 +255,7 @@ TASK_OPTIONS = [
 
 
 def filter_tasks_by_modality(tasks, modality):
-    if str(modality).upper() == "MRI":
-        return [t for t in tasks if t.endswith("_mr")]
-    return [t for t in tasks if not t.endswith("_mr")]
+    return core_filter_tasks_by_modality(tasks, modality)
 
 
 LICENSE_APPLY_URL = "https://backend.totalsegmentator.com/license-academic/"
@@ -342,6 +350,18 @@ class TotalSegApp(QMainWindow):
         self.current_batch_index = -1
         self.is_running = False
         self._retry_same_task = False
+        self._bulk_check_updating = False
+        self._max_log_chars = 200000
+        self._max_case_excerpt_chars = 16000
+        self.source_root_path = ""
+        self.batch_started_at = None
+        self.case_started_at = None
+        self.completed_case_durations = []
+        self.failed_cases = []
+        self.session_log_path = None
+        self.process_state = ""
+        self.process_error_message = ""
+        self._current_case_log_excerpt = ""
         
         self.compare_ai_mask = ""
         self.compare_manual_mask = ""
@@ -442,6 +462,7 @@ class TotalSegApp(QMainWindow):
         self.process.readyReadStandardOutput.connect(self.handle_stdout)
         self.process.readyRead.connect(self.drain_process_output)
         self.process.finished.connect(self.process_finished)
+        self.process.errorOccurred.connect(self.handle_process_error)
 
     def switch_mode(self, mode):
         if mode == "seg":
@@ -458,6 +479,165 @@ class TotalSegApp(QMainWindow):
         self.btn_mode_seg.style().polish(self.btn_mode_seg)
         self.btn_mode_compare.style().unpolish(self.btn_mode_compare)
         self.btn_mode_compare.style().polish(self.btn_mode_compare)
+
+    def _extract_numeric_prefix(self, folder_name):
+        m = re.match(r"^\s*(\d+)\.", folder_name or "")
+        if not m:
+            return None
+        return int(m.group(1))
+
+    def _folder_numeric_sort_key(self, folder):
+        prefix_num = self._extract_numeric_prefix(folder.name)
+        if prefix_num is None:
+            return (1, float("inf"), folder.name.lower())
+        return (0, prefix_num, folder.name.lower())
+
+    def _set_all_row_checks(self, checked):
+        self._bulk_check_updating = True
+        try:
+            for i in range(self.task_table.rowCount()):
+                chk_widget = self.task_table.cellWidget(i, 0)
+                if not chk_widget or not chk_widget.layout():
+                    continue
+                chk = chk_widget.layout().itemAt(0).widget()
+                if chk is not None:
+                    chk.setChecked(checked)
+        finally:
+            self._bulk_check_updating = False
+        self.update_ui_state()
+
+    def on_select_all_state_changed(self, state):
+        if self._bulk_check_updating:
+            return
+        if state in (Qt.CheckState.PartiallyChecked, Qt.CheckState.PartiallyChecked.value):
+            return
+        should_check = state in (Qt.CheckState.Checked, Qt.CheckState.Checked.value)
+        self._set_all_row_checks(should_check)
+
+    def on_row_checkbox_state_changed(self, _state):
+        if self._bulk_check_updating:
+            return
+        self.update_ui_state()
+
+    def update_select_all_state_from_rows(self):
+        if not hasattr(self, "chk_select_all_header"):
+            return
+
+        row_count = self.task_table.rowCount()
+        self.chk_select_all_header.setEnabled(row_count > 0)
+        if row_count == 0:
+            self.chk_select_all_header.blockSignals(True)
+            self.chk_select_all_header.setCheckState(Qt.CheckState.Unchecked)
+            self.chk_select_all_header.blockSignals(False)
+            return
+
+        checked_count = 0
+        for i in range(row_count):
+            chk_widget = self.task_table.cellWidget(i, 0)
+            if not chk_widget or not chk_widget.layout():
+                continue
+            chk = chk_widget.layout().itemAt(0).widget()
+            if chk is not None and chk.isChecked():
+                checked_count += 1
+
+        if checked_count == 0:
+            state = Qt.CheckState.Unchecked
+        elif checked_count == row_count:
+            state = Qt.CheckState.Checked
+        else:
+            state = Qt.CheckState.PartiallyChecked
+        self.chk_select_all_header.blockSignals(True)
+        self.chk_select_all_header.setCheckState(state)
+        self.chk_select_all_header.blockSignals(False)
+
+    def _trim_log_area_if_needed(self):
+        content = self.log_area.toPlainText()
+        if len(content) <= self._max_log_chars:
+            return
+        self.log_area.setPlainText(content[-self._max_log_chars :])
+        self.log_area.moveCursor(QTextCursor.End)
+
+    def _append_case_excerpt(self, text):
+        if not text:
+            return
+        self._current_case_log_excerpt += text
+        if len(self._current_case_log_excerpt) > self._max_case_excerpt_chars:
+            self._current_case_log_excerpt = self._current_case_log_excerpt[
+                -self._max_case_excerpt_chars :
+            ]
+
+    def _format_seconds(self, seconds):
+        seconds = max(0, int(seconds))
+        hh = seconds // 3600
+        mm = (seconds % 3600) // 60
+        ss = seconds % 60
+        return f"{hh:02d}:{mm:02d}:{ss:02d}"
+
+    def _update_progress_eta(self):
+        total = len(self.batch_queue)
+        current = self.current_batch_index + 1 if self.current_batch_index >= 0 else 0
+        if total <= 0:
+            self.prog_bar_lbl.setText("目前項目中共有 0 個待處理任務")
+            return
+
+        if self.completed_case_durations:
+            avg_seconds = sum(self.completed_case_durations) / len(self.completed_case_durations)
+            remaining_cases = max(0, total - len(self.completed_case_durations))
+            remaining_seconds = int(avg_seconds * remaining_cases)
+            eta_at = (datetime.now() + timedelta(seconds=remaining_seconds)).strftime("%H:%M")
+            eta_text = (
+                f"目前進度：第 {current} / {total} 個任務 | "
+                f"預估剩餘 {self._format_seconds(remaining_seconds)} | "
+                f"預計完成 {eta_at}"
+            )
+            self.prog_bar_lbl.setText(eta_text)
+            return
+        self.prog_bar_lbl.setText(f"目前進度：第 {current} / {total} 個任務")
+
+    def _prepare_session_log(self):
+        if not self.source_root_path:
+            return
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_dir = Path(self.source_root_path) / "totalseg_batch_logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        self.session_log_path = log_dir / f"batch_{ts}.log"
+        self.session_log_path.write_text("", encoding="utf-8")
+
+    def _write_session_log(self, message):
+        if not self.session_log_path:
+            return
+        try:
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            with self.session_log_path.open("a", encoding="utf-8") as f:
+                f.write(f"[{timestamp}] {message}\n")
+        except Exception:
+            # Logging should not break the batch flow.
+            pass
+
+    def _record_case_success(self, case_label, dicom_path, seconds):
+        self._write_session_log(
+            f"SUCCESS | case={case_label} | dicom={dicom_path} | seconds={seconds:.2f}"
+        )
+
+    def _record_case_failure(self, case_label, dicom_path, reason, excerpt):
+        entry = {
+            "case_label": case_label,
+            "dicom_path": dicom_path,
+            "reason": reason,
+        }
+        self.failed_cases.append(entry)
+        self._write_session_log(
+            f"FAIL | case={case_label} | dicom={dicom_path} | reason={reason}"
+        )
+        if excerpt:
+            self._write_session_log("ERROR_SNIPPET_START")
+            self._write_session_log(excerpt[-6000:])
+            self._write_session_log("ERROR_SNIPPET_END")
+
+    def handle_process_error(self, _error):
+        self.process_error_message = self.process.errorString()
+        if self.process_error_message:
+            self.append_log(f"[錯誤] 子程序異常：{self.process_error_message}\n")
 
     def setup_seg_page(self):
         layout = QHBoxLayout(self.page_seg)
@@ -574,6 +754,16 @@ class TotalSegApp(QMainWindow):
         right_col = QFrame()
         right_layout = QVBoxLayout(right_col)
         right_layout.setContentsMargins(0, 0, 0, 0)
+
+        queue_header_layout = QHBoxLayout()
+        self.chk_select_all_header = QCheckBox("全選")
+        self.chk_select_all_header.setTristate(True)
+        self.chk_select_all_header.setCheckState(Qt.CheckState.Unchecked)
+        self.chk_select_all_header.setEnabled(False)
+        self.chk_select_all_header.stateChanged.connect(self.on_select_all_state_changed)
+        queue_header_layout.addWidget(self.chk_select_all_header)
+        queue_header_layout.addStretch()
+        right_layout.addLayout(queue_header_layout)
         
         # Task Table
         self.task_table = QTableWidget(0, 3)
@@ -676,76 +866,39 @@ class TotalSegApp(QMainWindow):
 
     def run_compare_analysis(self):
         self.log_area.clear()
-        self.append_log("系統：開始執行比對分析...\n")
+        self.append_log("[INFO] Starting compare analysis...\n")
         self.btn_run_compare.setEnabled(False)
-        
+
         try:
-            if not sitk:
-                raise ImportError("尚未安裝 SimpleITK。")
+            result = core_compare_masks(self.compare_ai_mask, self.compare_manual_mask)
+            slice_idx = int(result["slice_index_1based"])
+            dice = float(result["dice"])
+            ai_area = float(result["ai_area_cm2"])
+            manual_area = float(result["manual_area_cm2"])
 
-            ai_img = sitk.ReadImage(self.compare_ai_mask)
-            manual_img = sitk.ReadImage(self.compare_manual_mask)
-
-            if ai_img.GetSize() != manual_img.GetSize() or ai_img.GetSpacing() != manual_img.GetSpacing():
-                resampler = sitk.ResampleImageFilter()
-                resampler.SetReferenceImage(manual_img)
-                resampler.SetInterpolator(sitk.sitkNearestNeighbor)
-                resampler.SetDefaultPixelValue(0)
-                ai_img = resampler.Execute(ai_img)
-
-            ai_arr = sitk.GetArrayFromImage(ai_img) > 0
-            manual_arr = sitk.GetArrayFromImage(manual_img) > 0
-            spacing = manual_img.GetSpacing()
-            
-            # Find the slice annotated by the doctor
-            slice_idx = -1
-            for i in range(manual_arr.shape[0]):
-                if np.any(manual_arr[i]):
-                    slice_idx = i
-                    break
-                    
-            if slice_idx == -1:
-                self.append_log("[錯誤] 無法在「人工標註結果」中找到任何標註 (皆為 0)。\n")
-                return
-
-            ai_slice = ai_arr[slice_idx]
-            manual_slice = manual_arr[slice_idx]
-            
-            # Dice
-            intersection = np.logical_and(ai_slice, manual_slice).sum()
-            total = ai_slice.sum() + manual_slice.sum()
-            dice = (2.0 * intersection / total) if total > 0 else 0.0
-            
-            # Area
-            pixel_cm2 = (spacing[0] * spacing[1]) / 100.0
-            ai_area = float(ai_slice.sum() * pixel_cm2)
-            manual_area = float(manual_slice.sum() * pixel_cm2)
-            
-            self.append_log(f"[成功] 找到標註層級：第 {slice_idx + 1} 層\n")
+            self.append_log(f"[INFO] Slice: {slice_idx}\n")
             self.append_log("-" * 40 + "\n")
-            self.append_log(f"AI 分割面積： {ai_area:.2f} cm²\n")
-            self.append_log(f"人工標註面積： {manual_area:.2f} cm²\n")
-            self.append_log(f"Dice 重合度： {dice:.4f} (滿分 1.0)\n")
+            self.append_log(f"AI area: {ai_area:.2f} cm2\n")
+            self.append_log(f"Manual area: {manual_area:.2f} cm2\n")
+            self.append_log(f"Dice: {dice:.4f} (max 1.0)\n")
             self.append_log("-" * 40 + "\n")
-            
-            # HTML 樣式高亮
+
             if dice >= 0.9:
-                self.append_log("<span style='color: #198754; font-weight: bold;'>評估：極致吻合 (Dice ≥ 0.9)</span><br>", is_html=True)
+                self.append_log("<span style='color: #198754; font-weight: bold;'>Excellent overlap (Dice >= 0.9)</span><br>", is_html=True)
             elif dice >= 0.8:
-                self.append_log("<span style='color: #0d6efd; font-weight: bold;'>評估：高度吻合 (Dice ≥ 0.8)</span><br>", is_html=True)
+                self.append_log("<span style='color: #0d6efd; font-weight: bold;'>Good overlap (Dice >= 0.8)</span><br>", is_html=True)
             else:
-                self.append_log("<span style='color: #dc3545; font-weight: bold;'>評估：吻合度偏低，建議人工檢視</span><br>", is_html=True)
-                
+                self.append_log("<span style='color: #dc3545; font-weight: bold;'>Low overlap. Please review masks.</span><br>", is_html=True)
+
         except Exception as e:
-            self.append_log(f"[錯誤] 比對分析失敗：{str(e)}\n")
+            self.append_log(f"[ERROR] Compare failed: {str(e)}\n")
         finally:
             self.btn_run_compare.setEnabled(True)
-
-    # --- Logic ---
 
     def select_source(self):
         path = QFileDialog.getExistingDirectory(self, "請選取 DICOM 資料夾或病患根目錄")
         if path:
+            self.source_root_path = path
             self.src_label.setText(path)
             parent_dir = Path(path).parent
             self.out_label.setText(str(parent_dir / (Path(path).name + "_output")))
@@ -757,105 +910,46 @@ class TotalSegApp(QMainWindow):
             self.out_label.setText(folder)
 
     def has_dicom_files(self, folder):
-        """檢查資料夾內是否有疑似 DICOM 的檔案 (包含無副檔名或 .dcm)"""
-        # 1. 優先檢查是否有名顯的 .dcm 結尾
-        if list(folder.glob("*.dcm")):
-            return True
-        # 2. 如果沒有 .dcm，檢查是否有無副檔名的非隱藏檔案 (常見於醫療系統匯出)
-        # 我們只看前 3 個檔案來加快掃描速度
-        files = [f for f in folder.iterdir() if f.is_file() and not f.name.startswith(".")]
-        if files:
-            # 測試第一個檔案是否能被 ITK 識別 (如果有安裝)
-            if sitk:
-                try:
-                    reader = sitk.ImageFileReader()
-                    reader.SetFileName(str(files[0]))
-                    reader.ReadImageInformation()
-                    return True
-                except:
-                    pass
-        return False
+        return core_has_dicom_files(folder)
 
     def get_dicom_slice_count(self, folder):
-        """回傳資料夾中的切片張數；若無法辨識則回傳 None。"""
-        if sitk:
-            try:
-                reader = sitk.ImageSeriesReader()
-                dicom_names = reader.GetGDCMSeriesFileNames(str(folder))
-                if dicom_names:
-                    return len(dicom_names)
-            except Exception:
-                pass
-
-        files = [f for f in folder.iterdir() if f.is_file() and not f.name.startswith(".")]
-        if not files:
-            return None
-
-        dcm_count = len([f for f in files if f.suffix.lower() == ".dcm"])
-        if dcm_count > 0:
-            return dcm_count
-        return len(files)
+        return core_get_dicom_slice_count(folder)
 
     def normalize_slice_range(self, start_str, end_str, slice_count):
-        """
-        將輸入切片範圍正規化為合法值。
-        回傳: (start_val, end_val, warn_message, error_message)
-        """
-        start_text = start_str.strip() if start_str else "1"
-        end_text = end_str.strip() if end_str else ""
-
-        if not start_text.isdigit() or (end_text and not end_text.isdigit()):
-            return None, None, None, "切片範圍必須為數字。"
-
-        start_val = int(start_text)
-        if start_val < 1:
-            return None, None, None, "起始層級必須大於或等於 1。"
-
-        end_val = int(end_text) if end_text else None
-        if end_val is not None and start_val > end_val:
-            return None, None, None, "起始層級不能大於結束層級。"
-
+        start_val, end_val, err = core_normalize_slice_range(start_str, end_str, slice_count)
         warn_message = None
-        if slice_count and slice_count > 0:
-            if start_val > slice_count:
-                return None, None, None, f"起始層級 {start_val} 超過此病患切片上限 {slice_count}。"
-            if end_val is None:
-                end_val = slice_count
-            elif end_val > slice_count:
-                warn_message = f"結束層級 {end_val} 超過此病患切片上限 {slice_count}，已自動調整為 {slice_count}。"
-                end_val = slice_count
-            if start_val > end_val:
-                return None, None, None, "起始層級不能大於結束層級。"
-
+        end_text = (end_str or "").strip()
+        if (
+            err is None
+            and slice_count
+            and slice_count > 0
+            and end_text.isdigit()
+            and int(end_text) > slice_count
+        ):
+            warn_message = (
+                f"?????? {int(end_text)} ??????????????{slice_count}???????????{slice_count}??"
+            )
+        if err:
+            return None, None, None, err
         return start_val, end_val, warn_message, None
 
     def scan_directory(self, root_path):
         self.task_table.setRowCount(0)
         self.folder_slice_counts = {}
         root = Path(root_path)
-        valid_folders = []
-        
-        # 1. 檢查是否直接為 DICOM 目錄
-        if self.has_dicom_files(root):
-            valid_folders.append(root)
-        else:
-            # 2. 遞迴搜尋子目錄 (最多往內找 4 層，確保效能)
-            for sub_dir in root.rglob("*"):
-                if sub_dir.is_dir():
-                    # 避免掃描太深或掃描到輸出資料夾
-                    if "_output" in sub_dir.name or "TotalSeg_Backend" in sub_dir.name:
-                        continue
-                    if self.has_dicom_files(sub_dir):
-                        valid_folders.append(sub_dir)
+        case_items = core_scan_dicom_cases(root)
+        valid_folders = [item.folder for item in case_items]
 
         if not valid_folders:
             self.append_log("[警示] 未在所選路徑偵測到 DICOM 影像檔。\n")
             self.btn_start.setEnabled(False)
+            self.update_select_all_state_from_rows()
             return
 
         self.task_table.setRowCount(len(valid_folders))
-        for i, folder in enumerate(valid_folders):
-            slice_count = self.get_dicom_slice_count(folder)
+        for i, item in enumerate(case_items):
+            folder = item.folder
+            slice_count = item.slice_count
             self.folder_slice_counts[str(folder)] = slice_count
             chk = QCheckBox()
             chk.setChecked(True)
@@ -865,12 +959,9 @@ class TotalSegApp(QMainWindow):
             chk_layout.setAlignment(Qt.AlignCenter)
             chk_layout.setContentsMargins(0, 0, 0, 0)
             self.task_table.setCellWidget(i, 0, chk_widget)
-            chk.stateChanged.connect(self.update_ui_state)
-            
-            try:
-                display_name = str(folder.relative_to(root)) if folder != root else folder.name
-            except ValueError:
-                display_name = str(folder)
+            chk.stateChanged.connect(self.on_row_checkbox_state_changed)
+
+            display_name = item.label
 
             if slice_count and slice_count > 0:
                 display_name = f"{display_name} ({slice_count} 張)"
@@ -927,13 +1018,17 @@ class TotalSegApp(QMainWindow):
         checked_count = 0
         for i in range(self.task_table.rowCount()):
             chk_widget = self.task_table.cellWidget(i, 0)
-            if chk_widget.layout().itemAt(0).widget().isChecked():
+            if not chk_widget or not chk_widget.layout():
+                continue
+            chk = chk_widget.layout().itemAt(0).widget()
+            if chk is not None and chk.isChecked():
                 checked_count += 1
         
         self.btn_start.setEnabled(checked_count > 0)
         self.prog_bar_lbl.setText(f"目前項目中共有 {checked_count} 個待處理任務")
         self.pbar.setMaximum(checked_count if checked_count > 0 else 1)
         self.pbar.setValue(0)
+        self.update_select_all_state_from_rows()
 
     def calc_erosion(self):
         text = self.erosion_input.text()
@@ -970,6 +1065,7 @@ class TotalSegApp(QMainWindow):
             # QPlainTextEdit does not support appendHtml; fall back to plain text.
             self.log_area.insertPlainText(text)
         self.log_area.moveCursor(QTextCursor.End)
+        self._trim_log_area_if_needed()
         QApplication.processEvents(QEventLoop.ExcludeUserInputEvents, 5)
 
     def start_unified_process(self):
@@ -978,11 +1074,21 @@ class TotalSegApp(QMainWindow):
         self._retry_same_task = False
         self.btn_start.setEnabled(False)
         self.btn_start.setText("初始化 AI 環境中...")
+        self.batch_started_at = datetime.now()
+        self.case_started_at = None
+        self.completed_case_durations = []
+        self.failed_cases = []
+        self.session_log_path = None
+        self.process_error_message = ""
+        self._current_case_log_excerpt = ""
         
         self.batch_queue = []
         for i in range(self.task_table.rowCount()):
             chk_widget = self.task_table.cellWidget(i, 0)
-            if chk_widget.layout().itemAt(0).widget().isChecked():
+            if not chk_widget or not chk_widget.layout():
+                continue
+            chk = chk_widget.layout().itemAt(0).widget()
+            if chk is not None and chk.isChecked():
                 dicom_path = self.task_table.item(i, 1).data(Qt.UserRole)
                 case_label = self.task_table.item(i, 1).text()
                 slice_count = self.folder_slice_counts.get(str(dicom_path))
@@ -990,7 +1096,17 @@ class TotalSegApp(QMainWindow):
                 out_path = str(Path(dicom_path).parent)
 
                 self.batch_queue.append((i, dicom_path, out_path, slice_count, case_label))
-                
+
+        if not self.batch_queue:
+            self.append_log("[警示] 尚未勾選任何病人，無法開始批次。\n")
+            self.reset_ui()
+            return
+
+        self._prepare_session_log()
+        self._write_session_log(
+            f"BATCH_START | total_cases={len(self.batch_queue)} | source={self.source_root_path}"
+        )
+
         self.current_batch_index = -1
         QTimer.singleShot(100, self.run_setup_and_segmentation)
 
@@ -1017,6 +1133,7 @@ class TotalSegApp(QMainWindow):
         clean = ANSI_ESCAPE_RE.sub("", text)
         if not clean:
             return
+        self._append_case_excerpt(clean)
         self._consume_stream_text(clean)
 
     def _consume_stream_text(self, text):
@@ -1044,6 +1161,7 @@ class TotalSegApp(QMainWindow):
             new_content = prefix + text
         self.log_area.setPlainText(new_content)
         self.log_area.moveCursor(QTextCursor.End)
+        self._trim_log_area_if_needed()
         QApplication.processEvents(QEventLoop.ExcludeUserInputEvents, 5)
 
     def _render_ephemeral_line(self, text):
@@ -1078,6 +1196,7 @@ class TotalSegApp(QMainWindow):
             self.log_area.insertPlainText(text)
         self.log_area.insertPlainText("\n")
         self.log_area.moveCursor(QTextCursor.End)
+        self._trim_log_area_if_needed()
         QApplication.processEvents(QEventLoop.ExcludeUserInputEvents, 5)
 
     def drain_process_output(self):
@@ -1274,31 +1393,41 @@ class TotalSegApp(QMainWindow):
                 self.reset_ui()
         elif self.process_state == "seg":
             if self.current_batch_index >= 0:
-                row = self.batch_queue[self.current_batch_index][0]
+                row, dicom_path, _out_path, _slice_count, case_label = self.batch_queue[self.current_batch_index]
+                elapsed = 0.0
+                if self.case_started_at is not None:
+                    elapsed = max(0.0, (datetime.now() - self.case_started_at).total_seconds())
+                self.completed_case_durations.append(elapsed)
                 if self.process.exitCode() == 0:
                     status = "處理完成"
                     self.task_table.item(row, 2).setText(status)
                     self.task_table.item(row, 2).setForeground(QColor("#198754"))
+                    self._record_case_success(case_label, dicom_path, elapsed)
                 else:
                     status = "處理失敗"
                     self.task_table.item(row, 2).setText(status)
                     self.task_table.item(row, 2).setForeground(QColor("#dc3545"))
-                    log_text = self.log_area.toPlainText()
+                    log_text = self._current_case_log_excerpt or self.log_area.toPlainText()
                     self.diagnose_error(log_text)
                     issue = self._classify_totalseg_error(log_text)
+                    reason = f"exit_code={self.process.exitCode()}"
+                    if self.process_error_message:
+                        reason += f", qprocess={self.process_error_message}"
                     if issue == "totalseg_config_json_broken":
                         _, msg = self.repair_totalseg_config_if_broken()
                         if msg:
                             self.append_log(msg)
-                        self.prompt_totalseg_license_and_maybe_retry()
-                        return
-                    if issue == "license_missing_or_invalid":
-                        self.prompt_totalseg_license_and_maybe_retry()
-                        return
-            
-            # 如果是最後一個任務，則重置 UI
-            if self.current_batch_index >= len(self.batch_queue) - 1:
-                self.reset_ui()
+                        reason += ", issue=totalseg_config_json_broken"
+                    elif issue == "license_missing_or_invalid":
+                        reason += ", issue=license_missing_or_invalid"
+                    self._record_case_failure(
+                        case_label=case_label,
+                        dicom_path=dicom_path,
+                        reason=reason,
+                        excerpt=log_text,
+                    )
+                    self.append_log(f"[錯誤] {case_label} 失敗，已記錄至批次 log。\n")
+            self._update_progress_eta()
             
             self.run_next_batch_task()
 
@@ -1311,22 +1440,18 @@ class TotalSegApp(QMainWindow):
             row, dicom_path, out_path, slice_count, case_label = self.batch_queue[self.current_batch_index]
             self.task_table.item(row, 2).setText("執行分割中...")
             self.task_table.item(row, 2).setForeground(QColor("#0d6efd"))
-            self.prog_bar_lbl.setText(f"目前進度：第 {self.current_batch_index + 1} / {len(self.batch_queue)} 個任務")
+            self.case_started_at = datetime.now()
+            self.process_error_message = ""
+            self._current_case_log_excerpt = ""
+            self._write_session_log(
+                f"CASE_START | index={self.current_batch_index + 1}/{len(self.batch_queue)} "
+                f"| case={case_label} | dicom={dicom_path}"
+            )
+            self._update_progress_eta()
             self.pbar.setValue(self.current_batch_index)
             
-            target_script = "seg.py"
-
-            cmd_args = [
-                "run", "--no-sync", "python", "-u", target_script,
-                "--dicom", dicom_path,
-                "--out", out_path,
-                "--task", self.task_combo.currentText(),
-                "--modality", self.modality_combo.currentText(),
-                "--spine", "1" if self.chk_spine.isChecked() else "0",
-                "--fast", "1" if self.chk_fast.isChecked() else "0",
-                "--auto_draw", "1" if self.chk_draw.isChecked() else "0",
-                "--erosion_iters", self.erosion_input.text()
-            ]
+            slice_start = None
+            slice_end = None
 
             # 1. 切片範圍防呆 (Slice Range Guard)
             if self.range_box_widget.isChecked():
@@ -1342,15 +1467,35 @@ class TotalSegApp(QMainWindow):
                     self.task_table.item(row, 2).setText("切片範圍錯誤")
                     self.task_table.item(row, 2).setForeground(QColor("#dc3545"))
                     self.append_log(f"[錯誤] {case_label}: {error_message}\n")
+                    self.completed_case_durations.append(0.0)
+                    self._record_case_failure(
+                        case_label=case_label,
+                        dicom_path=dicom_path,
+                        reason=f"slice_range_error: {error_message}",
+                        excerpt=error_message,
+                    )
+                    self._update_progress_eta()
                     QTimer.singleShot(0, self.run_next_batch_task)
                     return
 
                 if warn_message:
-                    self.append_log(f"[系統] {case_label}: {warn_message}\n")
+                    self.append_log(f"[??] {case_label}: {warn_message}\n")
 
-                cmd_args.extend(["--slice_start", str(start_val)])
-                if end_val is not None:
-                    cmd_args.extend(["--slice_end", str(end_val)])
+                slice_start = start_val
+                slice_end = end_val
+
+            cmd_args = build_seg_command(
+                dicom_path=dicom_path,
+                out_path=out_path,
+                task=self.task_combo.currentText(),
+                modality=self.modality_combo.currentText(),
+                spine=self.chk_spine.isChecked(),
+                fast=self.chk_fast.isChecked(),
+                auto_draw=self.chk_draw.isChecked(),
+                erosion_iters=self.erosion_input.text(),
+                slice_start=slice_start,
+                slice_end=slice_end,
+            )
 
             self.process_state = "seg"
             self._stream_buffer = ""
@@ -1359,7 +1504,21 @@ class TotalSegApp(QMainWindow):
             self.stream_timer.start()
             self.process.start("uv", cmd_args)
         else:
+            total = len(self.batch_queue)
+            failed = len(self.failed_cases)
+            succeeded = total - failed
+            elapsed = 0.0
+            if self.batch_started_at is not None:
+                elapsed = max(0.0, (datetime.now() - self.batch_started_at).total_seconds())
             self.append_log("\n[完成] 所有自動分割任務已處理完畢。\n")
+            self.append_log(
+                f"[統計] 成功 {succeeded} / 失敗 {failed} / 總數 {total}，總耗時 {self._format_seconds(elapsed)}。\n"
+            )
+            if self.session_log_path:
+                self.append_log(f"[系統] 批次 log：{self.session_log_path}\n")
+            self._write_session_log(
+                f"BATCH_END | total={total} | success={succeeded} | failed={failed} | elapsed_sec={elapsed:.2f}"
+            )
             self.pbar.setValue(len(self.batch_queue))
             self.reset_ui()
 

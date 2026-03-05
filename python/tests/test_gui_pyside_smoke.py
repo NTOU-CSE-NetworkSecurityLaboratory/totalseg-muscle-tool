@@ -30,26 +30,28 @@ def window(qapp):
         win.close()
 
 
-def _set_checked_task_row(win: TotalSegApp, row: int, dicom_path: str) -> None:
+def _set_checked_task_row(
+    win: TotalSegApp, row: int, dicom_path: str, checked: bool = True
+) -> QCheckBox:
     checkbox_wrap = QWidget()
     checkbox_layout = QHBoxLayout(checkbox_wrap)
     checkbox_layout.setContentsMargins(0, 0, 0, 0)
     checkbox = QCheckBox()
-    checkbox.setChecked(True)
+    checkbox.setChecked(checked)
     checkbox_layout.addWidget(checkbox)
     win.task_table.setCellWidget(row, 0, checkbox_wrap)
 
     path_item = QTableWidgetItem(f"case_{row}")
     path_item.setData(Qt.UserRole, dicom_path)
     win.task_table.setItem(row, 1, path_item)
-    win.task_table.setItem(row, 2, QTableWidgetItem("待處理"))
+    win.task_table.setItem(row, 2, QTableWidgetItem("Ready"))
+    return checkbox
 
 
 def test_gui_defaults(window):
     assert window.erosion_input.text() == "2"
     assert not window.out_group.isVisible()
     assert window.log_area.minimumHeight() == 320
-    # No fixed max height cap after layout update.
     assert window.log_area.maximumHeight() > 100000
 
 
@@ -66,12 +68,50 @@ def test_batch_queue_uses_parent_output_root(window):
     window.task_table.setRowCount(len(paths))
     for row, dicom_path in enumerate(paths):
         _set_checked_task_row(window, row, dicom_path)
+    window.run_setup_and_segmentation = lambda: None
 
     window.start_unified_process()
 
     expected_out_roots = [str(Path(p).parent) for p in paths]
     actual_out_roots = [item[2] for item in window.batch_queue]
     assert actual_out_roots == expected_out_roots
+
+
+def test_sort_key_uses_numeric_prefix(window):
+    names = ["10.a", "2.b", "100.c", "1.d", "x_no_prefix"]
+    ordered = sorted(names, key=lambda n: window._folder_numeric_sort_key(Path(n)))
+    assert ordered[:4] == ["1.d", "2.b", "10.a", "100.c"]
+    assert ordered[-1] == "x_no_prefix"
+
+
+def test_select_all_header_checks_and_unchecks_rows(window):
+    window.task_table.setRowCount(3)
+    _set_checked_task_row(window, 0, r"C:\cases\A001", checked=False)
+    _set_checked_task_row(window, 1, r"C:\cases\A002", checked=False)
+    _set_checked_task_row(window, 2, r"C:\cases\A003", checked=False)
+    window.update_ui_state()
+
+    window.chk_select_all_header.setCheckState(Qt.CheckState.Checked)
+    for row in range(3):
+        chk = window.task_table.cellWidget(row, 0).layout().itemAt(0).widget()
+        assert chk.isChecked()
+
+    window.chk_select_all_header.setCheckState(Qt.CheckState.Unchecked)
+    for row in range(3):
+        chk = window.task_table.cellWidget(row, 0).layout().itemAt(0).widget()
+        assert not chk.isChecked()
+
+
+def test_select_all_header_becomes_partially_checked(window):
+    window.task_table.setRowCount(2)
+    first = _set_checked_task_row(window, 0, r"C:\cases\A001", checked=True)
+    _set_checked_task_row(window, 1, r"C:\cases\A002", checked=True)
+    window.update_ui_state()
+    assert window.chk_select_all_header.checkState() == Qt.CheckState.Checked
+
+    first.setChecked(False)
+    window.on_row_checkbox_state_changed(0)
+    assert window.chk_select_all_header.checkState() == Qt.CheckState.PartiallyChecked
 
 
 def test_normalize_slice_range_clamps_to_patient_limit(window):

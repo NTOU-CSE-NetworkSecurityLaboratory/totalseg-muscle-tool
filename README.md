@@ -135,6 +135,12 @@ For engineering handoff and AI-assisted development context, see:
 - `docs/CSV_LOGIC.md`
 - `docs/CHANGELOG_DEV.md`
 
+### Clinical Quick Guide
+
+For clinician-facing quick operation notes, see:
+
+- `docs/DOCTOR_QUICK_GUIDE.md`
+
 ### Testing
 
 ```bash
