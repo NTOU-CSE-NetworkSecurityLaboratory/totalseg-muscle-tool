@@ -1427,6 +1427,9 @@ class TotalSegApp(QMainWindow):
                         excerpt=log_text,
                     )
                     self.append_log(f"[錯誤] {case_label} 失敗，已記錄至批次 log。\n")
+                    if issue == "license_missing_or_invalid":
+                        self.prompt_totalseg_license_and_maybe_retry()
+                        return
             self._update_progress_eta()
             
             self.run_next_batch_task()

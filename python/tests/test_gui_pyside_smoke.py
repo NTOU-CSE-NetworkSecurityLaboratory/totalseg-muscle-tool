@@ -165,6 +165,50 @@ def test_classify_totalseg_license_error(window):
     assert window._classify_totalseg_error(log_text) == "license_missing_or_invalid"
 
 
+def test_process_finished_prompts_for_license_issue(window, monkeypatch):
+    class FakeProcess:
+        def exitCode(self):
+            return 1
+
+        def state(self):
+            return 0
+
+    window.process = FakeProcess()
+    window.process_state = "seg"
+    window.current_batch_index = 0
+    window.batch_queue = [(0, "/tmp/case", "/tmp/out", 12, "SER00005")]
+    window.task_table.setRowCount(1)
+    _set_checked_task_row(window, 0, "/tmp/case")
+    window._current_case_log_excerpt = "This task is not openly available. It requires a license."
+    window.process_error_message = ""
+    window.case_started_at = None
+    window.completed_case_durations = []
+    window.failed_cases = []
+    window._stream_buffer = ""
+    window._stream_line_buffer = ""
+    window._ephemeral_active = False
+
+    prompted = {"called": False}
+
+    def fake_prompt():
+        prompted["called"] = True
+        return True
+
+    monkeypatch.setattr(window, "drain_process_output", lambda: None)
+    monkeypatch.setattr(window, "append_stream_log", lambda _text: None)
+    monkeypatch.setattr(window, "_commit_stream_line", lambda _text: None)
+    monkeypatch.setattr(window.stream_timer, "stop", lambda: None)
+    monkeypatch.setattr(window, "diagnose_error", lambda _text: None)
+    monkeypatch.setattr(window, "_record_case_failure", lambda **_kwargs: None)
+    monkeypatch.setattr(window, "_update_progress_eta", lambda: None)
+    monkeypatch.setattr(window, "run_next_batch_task", lambda: (_ for _ in ()).throw(AssertionError("should not continue batch")))
+    monkeypatch.setattr(window, "prompt_totalseg_license_and_maybe_retry", fake_prompt)
+
+    window.process_finished()
+
+    assert prompted["called"] is True
+
+
 def test_classify_totalseg_broken_config_error(window):
     log_text = "json.decoder.JSONDecodeError ... totalsegmentator\\config.py"
     assert window._classify_totalseg_error(log_text) == "totalseg_config_json_broken"
