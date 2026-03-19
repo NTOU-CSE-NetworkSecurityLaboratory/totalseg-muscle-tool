@@ -372,11 +372,11 @@ def export_areas_and_volumes_to_csv(
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
 
-        for i in range(max_slices, 0, -1):
-            row = {"slicenumber": max_slices - i + 1}
+        for i in range(max_slices):
+            row = {"slicenumber": str(i + 1)}
             for muscle in muscles:
-                if i <= len(area_results[muscle]):
-                    val = area_results[muscle][i - 1]
+                if i < len(area_results[muscle]):
+                    val = area_results[muscle][i]
                     row[muscle] = f"{val:.2f}"
                 else:
                     row[muscle] = "0.00"
@@ -387,11 +387,11 @@ def export_areas_and_volumes_to_csv(
         writer.writerow([])  # 空行
         writer.writerow(["slicenumber"] + merged_muscles)  # header（合併後的名稱）
 
-        for i in range(max_slices, 0, -1):
-            row = [max_slices - i + 1]  # slice number
+        for i in range(max_slices):
+            row = [str(i + 1)]  # slice number
             for muscle in merged_muscles:
-                if i <= len(merged_hu[muscle]):
-                    val = merged_hu[muscle][i - 1]
+                if i < len(merged_hu[muscle]):
+                    val = merged_hu[muscle][i]
                     row.append(f"{val:.2f}")
                 else:
                     row.append("0.00")
@@ -401,11 +401,11 @@ def export_areas_and_volumes_to_csv(
         writer.writerow([])
         writer.writerow(["slicenumber"] + merged_std_muscles)
 
-        for i in range(max_slices, 0, -1):
-            row = [max_slices - i + 1]
+        for i in range(max_slices):
+            row = [str(i + 1)]
             for muscle in merged_std_muscles:
-                if i <= len(merged_std[muscle]):
-                    val = merged_std[muscle][i - 1]
+                if i < len(merged_std[muscle]):
+                    val = merged_std[muscle][i]
                     row.append(f"{val:.2f}")
                 else:
                     row.append("0.00")

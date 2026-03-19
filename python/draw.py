@@ -1,5 +1,6 @@
 import argparse
 import sys
+from collections import Counter
 from pathlib import Path
 import numpy as np
 import SimpleITK as sitk
@@ -179,6 +180,26 @@ def erode_mask_slice(mask_slice, erosion_iters):
     return eroded.astype(bool)
 
 
+def build_overlay_png_names(dicom_files):
+    # CT exports may use filenames like `CT.1`, `CT.2`, which all collapse to `CT.png`
+    # if only the final suffix is replaced.
+    raw_names = [Path(dicom_file).with_suffix(".png").name for dicom_file in dicom_files]
+    counts = Counter(raw_names)
+    resolved = []
+
+    for idx, (dicom_file, raw_name) in enumerate(zip(dicom_files, raw_names), start=1):
+        if counts[raw_name] == 1:
+            resolved.append(raw_name)
+            continue
+
+        original_name = Path(dicom_file).name
+        if Path(original_name).suffix.lower() == ".dcm":
+            original_name = Path(original_name).stem
+        resolved.append(f"{idx:04d}_{original_name}.png")
+
+    return resolved
+
+
 def dicom_to_overlay_png(
     dicom_dir: Path,
     out_dir: Path,
@@ -226,6 +247,7 @@ def dicom_to_overlay_png(
     total_slices = len(files)
     start = max(0, int(slice_start) - 1) if slice_start else 0
     end = min(total_slices, int(slice_end)) if slice_end else total_slices
+    png_names = build_overlay_png_names(files)
 
     for idx, dicom_file in enumerate(files):
         # Skip if outside range
@@ -268,7 +290,7 @@ def dicom_to_overlay_png(
             if show_spine:
                 label = find_spine_label(idx, dicom_dir, fast)
                 draw_spine_label(overlay_img, label)
-            png_filename = Path(dicom_file).with_suffix(".png").name
+            png_filename = png_names[idx]
             overlay_img.save(out_dir / png_filename)
             output_count += 1
 
