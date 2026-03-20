@@ -2,7 +2,7 @@
 
 ## 1. 開啟程式
 
-- 雙擊 `START WebView Tailwind.bat`
+- 雙擊 `START 啟動.bat`
 - 開啟後先按 `Select DICOM Folder` 選擇病例資料夾
 
 ## 2. 分割流程（Segmentation）
