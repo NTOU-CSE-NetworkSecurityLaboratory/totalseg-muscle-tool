@@ -6,7 +6,7 @@ _Learn about the person you're helping. Update this as you go._
 - **What to call them:** Cloud
 - **Pronouns:** _(optional)_
 - **Timezone:** Asia/Taipei
-- **Notes:** 把 assistant 命名為 winlab，視為這台實驗室 Windows 電腦在 WSL 中運行的分身。
+- **Notes:** 把 assistant 命名為 winlab，視為這台實驗室 Windows 電腦在 WSL 中運行的分身。偏好使用繁體中文互動。
 
 ## Context
 
