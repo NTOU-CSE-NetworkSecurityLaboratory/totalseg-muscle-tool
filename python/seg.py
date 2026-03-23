@@ -1,17 +1,19 @@
 import argparse
-import subprocess
-from pathlib import Path
-from totalsegmentator.python_api import totalsegmentator
-import SimpleITK as sitk
-import numpy as np
 import csv
-import os
 import json
-import cv2
+import os
 import shutil
+import subprocess
 import tempfile
 import time
 from datetime import datetime
+from pathlib import Path
+
+import cv2
+import numpy as np
+import SimpleITK as sitk
+from totalsegmentator.python_api import totalsegmentator
+
 from auto_draw_cmd import build_auto_draw_command
 
 VERTEBRAE_LABELS = (
@@ -19,6 +21,10 @@ VERTEBRAE_LABELS = (
     + [f"vertebrae_T{i}" for i in range(1, 13)]
     + [f"vertebrae_L{i}" for i in range(1, 6)]
 )
+
+FIXED_PIPELINE_SPINE = 1
+FIXED_PIPELINE_FAST = 0
+FIXED_PIPELINE_AUTO_DRAW = 1
 
 
 def resolve_task_for_modality(task, modality):
@@ -36,6 +42,18 @@ def resolve_task_for_modality(task, modality):
 def log_info(message):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}] {message}")
+
+
+def apply_fixed_pipeline_defaults(args):
+    requested = {
+        "spine": int(args.spine),
+        "fast": int(args.fast),
+        "auto_draw": int(args.auto_draw),
+    }
+    args.spine = FIXED_PIPELINE_SPINE
+    args.fast = FIXED_PIPELINE_FAST
+    args.auto_draw = FIXED_PIPELINE_AUTO_DRAW
+    return requested
 
 
 def _is_ascii_path(path):
@@ -461,11 +479,11 @@ def merge_statistics_to_csv(mask_dir, output_csv):
         return
 
     # 讀取 statistics.json
-    with open(stats_json_path, "r") as f:
+    with open(stats_json_path) as f:
         stats_data = json.load(f)
 
     # 讀取現有 CSV
-    with open(output_csv, "r", newline="") as f:
+    with open(output_csv, newline="") as f:
         existing_lines = f.readlines()
 
     # 找到 summary 表格的起始位置
@@ -648,11 +666,18 @@ def main():
     parser.add_argument("--slice_end", type=int, default=None, help="End slice (1-indexed)")
 
     args = parser.parse_args()
+    requested_flags = apply_fixed_pipeline_defaults(args)
     pipeline_t0 = time.perf_counter()
 
-    if args.fast:
-        print(
-            "Note: Fast mode is enabled. Speed prioritized over accuracy. For preview only."
+    if requested_flags != {
+        "spine": FIXED_PIPELINE_SPINE,
+        "fast": FIXED_PIPELINE_FAST,
+        "auto_draw": FIXED_PIPELINE_AUTO_DRAW,
+    }:
+        log_info(
+            "Fixed pipeline active: overriding requested flags "
+            f"from {requested_flags} to "
+            f"{{'spine': {args.spine}, 'fast': {args.fast}, 'auto_draw': {args.auto_draw}}}"
         )
 
     dicom_path = Path(args.dicom)

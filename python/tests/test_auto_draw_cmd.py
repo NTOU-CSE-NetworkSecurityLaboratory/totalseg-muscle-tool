@@ -1,4 +1,22 @@
 from auto_draw_cmd import build_auto_draw_command
+from core.shared_core import build_seg_command
+
+
+def test_build_seg_command_forces_fixed_pipeline_flags():
+    cmd = build_seg_command(
+        dicom_path="SER00005",
+        out_path="/tmp/out",
+        task="abdominal_muscles",
+        modality="CT",
+        spine=False,
+        fast=True,
+        auto_draw=False,
+        erosion_iters=2,
+    )
+
+    assert cmd[cmd.index("--spine") + 1] == "1"
+    assert cmd[cmd.index("--fast") + 1] == "0"
+    assert cmd[cmd.index("--auto_draw") + 1] == "1"
 
 
 def test_build_auto_draw_command_omits_optional_args_when_none():

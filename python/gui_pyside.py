@@ -1,34 +1,64 @@
-import sys
-import shutil
-import subprocess
-import re
 import json
 import os
 import random
+import re
+import shutil
 import string
+import subprocess
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-import numpy as np
+
+from PySide6.QtCore import QEventLoop, QProcess, QProcessEnvironment, Qt, QTimer
+from PySide6.QtGui import QColor, QFont, QIcon, QIntValidator, QTextCursor
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QApplication,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QFileDialog,
+    QFormLayout,
+    QFrame,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+    QPlainTextEdit,
+    QProgressBar,
+    QPushButton,
+    QSizePolicy,
+    QStackedWidget,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
 from core.shared_core import (
     build_seg_command,
+)
+from core.shared_core import (
     compare_masks as core_compare_masks,
+)
+from core.shared_core import (
     filter_tasks_by_modality as core_filter_tasks_by_modality,
+)
+from core.shared_core import (
     get_dicom_slice_count as core_get_dicom_slice_count,
+)
+from core.shared_core import (
     has_dicom_files as core_has_dicom_files,
+)
+from core.shared_core import (
     normalize_slice_range as core_normalize_slice_range,
+)
+from core.shared_core import (
     scan_dicom_cases as core_scan_dicom_cases,
 )
-
-from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-    QLabel, QPushButton, QComboBox, QCheckBox, QFrame,
-    QLineEdit, QFileDialog, QPlainTextEdit, QGroupBox, QFormLayout,
-    QTableWidget, QTableWidgetItem, QHeaderView, QProgressBar, QStackedWidget,
-    QMessageBox, QAbstractItemView, QSizePolicy, QDialog
-)
-from PySide6.QtCore import Qt, QProcess, QTimer, QSize, QProcessEnvironment, QEventLoop
-from PySide6.QtGui import QFont, QTextCursor, QIcon, QColor, QIntValidator
 
 # Try importing SimpleITK for erosion calculation
 try:
@@ -37,7 +67,6 @@ except ImportError:
     sitk = None
 
 # Determine if running as a bundled PyInstaller EXE
-import platform
 IS_BUNDLED = getattr(sys, 'frozen', False)
 
 if IS_BUNDLED:
@@ -689,14 +718,18 @@ class TotalSegApp(QMainWindow):
         self.apply_modality_filter(self.modality_combo.currentText())
         cfg_layout.addLayout(grid_layout)
 
-        self.chk_spine = QCheckBox("標註脊椎層級 (需較長時間)")
+        self.chk_spine = QCheckBox("標註脊椎層級（固定啟用）")
         self.chk_spine.setChecked(True)
-        self.chk_fast = QCheckBox("快速推論模式 (低解析度)")
-        self.chk_draw = QCheckBox("自動產生影像疊加圖 (PNG)")
+        self.chk_spine.setEnabled(False)
+        self.chk_fast = QCheckBox("快速推論模式（已移出主流程）")
+        self.chk_fast.setChecked(False)
+        self.chk_fast.setEnabled(False)
+        self.chk_fast.setVisible(False)
+        self.chk_draw = QCheckBox("自動產生影像疊加圖（固定啟用）")
         self.chk_draw.setChecked(True)
+        self.chk_draw.setEnabled(False)
         
         cfg_layout.addWidget(self.chk_spine)
-        cfg_layout.addWidget(self.chk_fast)
         cfg_layout.addWidget(self.chk_draw)
 
         erosion_box = QHBoxLayout()
@@ -1009,7 +1042,7 @@ class TotalSegApp(QMainWindow):
                     self.append_log(f"[系統] 成功識別影像解析度: {spacing[0]:.2f} x {spacing[1]:.2f} mm\n")
                 else:
                     self.spacing_xy = None
-            except Exception as e:
+            except Exception:
                 self.spacing_xy = None
                 # 不在 Log 顯示冗長的錯誤，保持介面簡潔
         self.calc_erosion()
@@ -1214,7 +1247,7 @@ class TotalSegApp(QMainWindow):
             torch_bin = BASE_DIR / ".venv" / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages" / "torch" / "bin" / "torch_shm_manager"
             if torch_bin.exists():
                 subprocess.run(["chmod", "+x", str(torch_bin)], check=True)
-                self.append_log(f"[系統] 已自動修復 macOS PyTorch 核心執行權限。\n")
+                self.append_log("[系統] 已自動修復 macOS PyTorch 核心執行權限。\n")
         except Exception as e:
             self.append_log(f"[警告] 自動修復權限失敗: {str(e)}\n")
 

@@ -33,6 +33,16 @@
 2. CSV 加 metadata 區塊（range, erosion, modality, task）。
 3. 範圍模式新增「只輸出區間切片」選項，避免 0 值誤讀。
 
+## v0.0.4 (2026-03-23)
+
+- Added `docs/REFRACTOR_FIXED_PIPELINE_SPEC.md` to lock the next product direction:
+  - WebView removed from target architecture
+  - fixed main pipeline becomes `DICOM -> segmentation -> CSV -> PNG`
+  - spine / PNG treated as built-in workflow behavior
+  - fast mode moved out of the normal product path
+- Updated developer docs to point at the new fixed-pipeline direction.
+- Added repo quality baseline planning for `ruff`, `basedpyright`, and stable `pytest` discovery.
+
 ## v0.0.3 (2026-03-05)
 
 - Added WebView shell hardening and lifecycle cleanup:
