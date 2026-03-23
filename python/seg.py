@@ -390,11 +390,11 @@ def export_areas_and_volumes_to_csv(
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
 
-        for i in range(max_slices):
-            row = {"slicenumber": str(i + 1)}
+        for i in range(max_slices, 0, -1):
+            row = {"slicenumber": str(max_slices - i + 1)}
             for muscle in muscles:
-                if i < len(area_results[muscle]):
-                    val = area_results[muscle][i]
+                if i <= len(area_results[muscle]):
+                    val = area_results[muscle][i - 1]
                     row[muscle] = f"{val:.2f}"
                 else:
                     row[muscle] = "0.00"
@@ -405,11 +405,11 @@ def export_areas_and_volumes_to_csv(
         writer.writerow([])  # 空行
         writer.writerow(["slicenumber"] + merged_muscles)  # header（合併後的名稱）
 
-        for i in range(max_slices):
-            row = [str(i + 1)]  # slice number
+        for i in range(max_slices, 0, -1):
+            row = [str(max_slices - i + 1)]  # slice number
             for muscle in merged_muscles:
-                if i < len(merged_hu[muscle]):
-                    val = merged_hu[muscle][i]
+                if i <= len(merged_hu[muscle]):
+                    val = merged_hu[muscle][i - 1]
                     row.append(f"{val:.2f}")
                 else:
                     row.append("0.00")
@@ -419,11 +419,11 @@ def export_areas_and_volumes_to_csv(
         writer.writerow([])
         writer.writerow(["slicenumber"] + merged_std_muscles)
 
-        for i in range(max_slices):
-            row = [str(i + 1)]
+        for i in range(max_slices, 0, -1):
+            row = [str(max_slices - i + 1)]
             for muscle in merged_std_muscles:
-                if i < len(merged_std[muscle]):
-                    val = merged_std[muscle][i]
+                if i <= len(merged_std[muscle]):
+                    val = merged_std[muscle][i - 1]
                     row.append(f"{val:.2f}")
                 else:
                     row.append("0.00")
@@ -634,6 +634,73 @@ def run_task(dicom_path, out_dir, task, fast=False, roi_subset=None):
     )
 
 
+def resolve_output_base(dicom_path, out):
+    return (Path(out) if out else dicom_path.parent) / f"{dicom_path.name}_output"
+
+
+def export_outputs_from_existing_segments(
+    *,
+    dicom_path,
+    output_base,
+    task,
+    modality,
+    erosion_iters,
+    slice_start,
+    slice_end,
+    auto_draw,
+):
+    seg_folder_name = f"segmentation_{task}"
+    seg_output = output_base / seg_folder_name
+    if not seg_output.exists():
+        raise RuntimeError(f"Primary segmentation folder not found: {seg_output}")
+
+    output_csv = output_base / f"mask_{task}.csv"
+    export_areas_and_volumes_to_csv(
+        seg_output,
+        str(output_csv),
+        dicom_path,
+        erosion_iters=erosion_iters,
+        slice_start=slice_start,
+        slice_end=slice_end,
+    )
+    merge_statistics_to_csv(seg_output, str(output_csv))
+
+    task_to_run = resolve_task_for_modality(task, modality)
+    if task_to_run not in {"total", "total_mr"}:
+        seg_spine_output = output_base / "segmentation_spine_fast"
+        if not seg_spine_output.exists():
+            raise RuntimeError(
+                f"Spine segmentation folder not found: {seg_spine_output}"
+            )
+        output_spine_csv = output_base / "mask_spine_fast.csv"
+        export_areas_and_volumes_to_csv(
+            seg_spine_output,
+            str(output_spine_csv),
+            dicom_path,
+            erosion_iters=erosion_iters,
+            slice_start=slice_start,
+            slice_end=slice_end,
+        )
+        merge_statistics_to_csv(seg_spine_output, str(output_spine_csv))
+
+    if auto_draw:
+        draw_t0 = time.perf_counter()
+        log_info("Stage: auto_draw started")
+        draw_cmd = build_auto_draw_command(
+            dicom=dicom_path,
+            out=output_base.parent,
+            task=task,
+            spine=FIXED_PIPELINE_SPINE,
+            fast=FIXED_PIPELINE_FAST,
+            erosion_iters=erosion_iters,
+            slice_start=slice_start,
+            slice_end=slice_end,
+        )
+        subprocess.run(draw_cmd, check=True)
+        log_info(f"Stage: auto_draw completed in {time.perf_counter()-draw_t0:.2f}s")
+
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Segmentation pipeline v0.0.1 - 自動合併左右肌肉"
@@ -664,6 +731,11 @@ def main():
     parser.add_argument("--modality", type=str, default="CT", help="Imaging modality (CT or MRI)")
     parser.add_argument("--slice_start", type=int, default=None, help="Start slice (1-indexed)")
     parser.add_argument("--slice_end", type=int, default=None, help="End slice (1-indexed)")
+    parser.add_argument(
+        "--skip_segmentation",
+        action="store_true",
+        help="Reuse existing segmentation folders and regenerate CSV/PNG outputs only",
+    )
 
     args = parser.parse_args()
     requested_flags = apply_fixed_pipeline_defaults(args)
@@ -681,9 +753,7 @@ def main():
         )
 
     dicom_path = Path(args.dicom)
-    output_base = (
-        Path(args.out) if args.out else dicom_path.parent
-    ) / f"{dicom_path.name}_output"
+    output_base = resolve_output_base(dicom_path, args.out)
     output_base.mkdir(parents=True, exist_ok=True)
     log_info(
         "Pipeline started "
@@ -692,6 +762,21 @@ def main():
         f"erosion_iters={args.erosion_iters}, modality={args.modality}, "
         f"range={args.slice_start}-{args.slice_end})"
     )
+
+    if args.skip_segmentation:
+        log_info(f"Skipping segmentation and reusing existing outputs in: {output_base}")
+        export_outputs_from_existing_segments(
+            dicom_path=dicom_path,
+            output_base=output_base,
+            task=args.task,
+            modality=args.modality,
+            erosion_iters=args.erosion_iters,
+            slice_start=args.slice_start,
+            slice_end=args.slice_end,
+            auto_draw=bool(args.auto_draw),
+        )
+        log_info(f"Pipeline completed in {time.perf_counter()-pipeline_t0:.2f}s")
+        return
 
     seg_folder_name = f"segmentation_{args.task}" + ("_fast" if args.fast else "")
     seg_output = output_base / seg_folder_name
@@ -702,27 +787,12 @@ def main():
     task_to_run = resolve_task_for_modality(args.task, args.modality)
     run_task(dicom_path, seg_output, task_to_run, fast=bool(args.fast))
 
-    csv_name = f"mask_{args.task}" + ("_fast" if args.fast else "") + ".csv"
-    output_csv = output_base / csv_name
-
-    export_areas_and_volumes_to_csv(
-        seg_output,
-        str(output_csv),
-        dicom_path,
-        erosion_iters=args.erosion_iters,
-        slice_start=args.slice_start,
-        slice_end=args.slice_end,
-    )
-    merge_statistics_to_csv(seg_output, str(output_csv))
-
     if args.spine and task_to_run not in {"total", "total_mr"}:
         spine_task = "vertebrae_mr" if args.modality.upper() == "MRI" else "total"
         log_info(f"Running spine segmentation task: {spine_task}")
-        spine_folder_name = "segmentation_spine_fast"
-        seg_spine_output = output_base / spine_folder_name
+        seg_spine_output = output_base / "segmentation_spine_fast"
         seg_spine_output.mkdir(exist_ok=True)
         log_info(f"Spine segmentation output dir: {seg_spine_output}")
-
         spine_roi_subset = None if spine_task == "vertebrae_mr" else VERTEBRAE_LABELS
         run_task(
             dicom_path,
@@ -732,34 +802,16 @@ def main():
             roi_subset=spine_roi_subset,
         )
 
-        spine_csv_name = "mask_spine_fast.csv"
-        output_spine_csv = output_base / spine_csv_name
-
-        export_areas_and_volumes_to_csv(
-            seg_spine_output,
-            str(output_spine_csv),
-            dicom_path,
-            erosion_iters=args.erosion_iters,
-            slice_start=args.slice_start,
-            slice_end=args.slice_end,
-        )
-        merge_statistics_to_csv(seg_spine_output, str(output_spine_csv))
-
-    if args.auto_draw:
-        draw_t0 = time.perf_counter()
-        log_info("Stage: auto_draw started")
-        draw_cmd = build_auto_draw_command(
-            dicom=args.dicom,
-            out=args.out,
-            task=args.task,
-            spine=args.spine,
-            fast=args.fast,
-            erosion_iters=args.erosion_iters,
-            slice_start=args.slice_start,
-            slice_end=args.slice_end,
-        )
-        subprocess.run(draw_cmd, check=True)
-        log_info(f"Stage: auto_draw completed in {time.perf_counter()-draw_t0:.2f}s")
+    export_outputs_from_existing_segments(
+        dicom_path=dicom_path,
+        output_base=output_base,
+        task=args.task,
+        modality=args.modality,
+        erosion_iters=args.erosion_iters,
+        slice_start=args.slice_start,
+        slice_end=args.slice_end,
+        auto_draw=bool(args.auto_draw),
+    )
 
     log_info(f"Pipeline completed in {time.perf_counter()-pipeline_t0:.2f}s")
 

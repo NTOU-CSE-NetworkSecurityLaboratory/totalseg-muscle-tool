@@ -16,6 +16,7 @@ def test_main_fixed_pipeline_preserves_expected_output_contract(monkeypatch, tmp
     }
 
     def fake_run_task(dicom_path, out_dir, task, fast=False, roi_subset=None):
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
         recorded["run_task"].append(
             {
                 "dicom_path": Path(dicom_path),

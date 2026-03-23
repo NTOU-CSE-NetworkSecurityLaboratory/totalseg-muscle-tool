@@ -105,6 +105,7 @@ Fixed pipeline behavior in the current refactor branch:
 - PNG overlay generation is always enabled
 - fast mode is removed from the normal workflow
 - legacy `--spine`, `--fast`, `--auto_draw` flags are still accepted for compatibility, but normalized internally
+- `--skip_segmentation` can reuse existing segmentation folders and regenerate CSV / PNG outputs without rerunning TotalSegmentator
 
 ### Calculation Logic
 
