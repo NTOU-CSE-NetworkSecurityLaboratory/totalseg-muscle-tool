@@ -17,6 +17,7 @@ dependencies = [
     "slicerio>=0.3.1",
     "pyside6>=6.10.2",
     "pyqtdarktheme>=2.1.0",
+    "pywebview>=6.1",
 ]
 
 # Windows/Linux GPU 環境：使用 CUDA 12.8

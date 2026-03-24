@@ -36,21 +36,81 @@
     };
   </script>
   <style>
-    .neu-card {
-      background: #f4f7fc;
-      border: 1px solid #e3eaf4;
-      box-shadow: 8px 8px 20px rgba(148, 167, 199, 0.18), -8px -8px 20px rgba(255, 255, 255, 0.92);
+    :root {
+      color-scheme: light;
     }
-    .neu-input {
-      background: #f1f5fb;
-      border: 1px solid #dfe7f2;
-      box-shadow: inset 3px 3px 8px rgba(148, 167, 199, 0.16), inset -3px -3px 8px rgba(255, 255, 255, 0.85);
+    .shell-card {
+      background: #ffffff;
+      border: 1px solid #dde5ee;
+      box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
     }
-    .neu-btn {
-      box-shadow: 4px 4px 10px rgba(148, 167, 199, 0.20), -4px -4px 10px rgba(255, 255, 255, 0.82);
+    .soft-card {
+      background: #f8fafd;
+      border: 1px solid #dfe6ef;
     }
-    .neu-btn:active {
-      box-shadow: inset 4px 4px 12px rgba(148, 167, 199, 0.20), inset -4px -4px 12px rgba(255, 255, 255, 0.82);
+    .soft-field {
+      background: #ffffff;
+      border: 1px solid #d7e0eb;
+      box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.03);
+    }
+    .toolbar-btn {
+      border: 1px solid #d7e0eb;
+      background: #ffffff;
+      color: #4c5b6d;
+      transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+    }
+    .toolbar-btn:hover {
+      background: #f3f7fb;
+      border-color: #c8d4e3;
+      color: #23364d;
+    }
+    .primary-btn {
+      background: #335fc1;
+      color: #ffffff;
+      border: 1px solid #335fc1;
+      transition: background-color 160ms ease, border-color 160ms ease;
+    }
+    .primary-btn:hover {
+      background: #294ea4;
+      border-color: #294ea4;
+    }
+    .page-title {
+      font-size: 1.55rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: #1d2b3f;
+    }
+    .page-subtitle {
+      color: #677689;
+    }
+    .section-title {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #1d2b3f;
+    }
+    .section-copy {
+      color: #677689;
+      font-size: 0.925rem;
+    }
+    .stat-card {
+      background: #f8fafc;
+      border: 1px solid #dde5ee;
+    }
+    .stat-label {
+      font-size: 0.75rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #7b8796;
+    }
+    .stat-value {
+      margin-top: 0.6rem;
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: #1d2b3f;
+    }
+    .settings-modal {
+      background: rgba(31, 42, 61, 0.42);
+      backdrop-filter: blur(4px);
     }
     @media (prefers-reduced-motion: reduce) {
       * {
@@ -62,84 +122,75 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet" />
 </head>
-<body class="min-h-screen bg-gradient-to-b from-blush via-surface to-[#FAFCFF] text-ink antialiased">
-  <a href="#main-content" class="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:rounded-lg focus:bg-white focus:px-3 focus:py-2 focus:shadow-soft">Skip to content</a>
+<body class="min-h-screen bg-[#f7f9fc] text-ink antialiased">
+  <a href="#main-content" class="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:rounded-lg focus:bg-white focus:px-3 focus:py-2 focus:shadow-sm">Skip to content</a>
 
-  <div class="mx-auto max-w-[1540px] p-4 lg:p-6">
-    <header class="sticky top-3 z-30 mb-4 rounded-2xl border border-[#dfe7f2] bg-[#f7f9fd]/95 shadow-panel backdrop-blur">
-      <div class="flex h-16 items-center justify-between px-4 lg:px-6">
-        <div class="flex items-center gap-8">
-          <div class="text-xl font-bold tracking-tight text-brandStrong">TotalSeg AI</div>
-          <nav class="flex gap-2" aria-label="Main tabs">
-            <button id="tab-seg-btn" class="neu-btn cursor-pointer rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-white transition-colors duration-200 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brandSoft">Segmentation</button>
-            <button id="tab-compare-btn" class="neu-btn cursor-pointer rounded-xl px-4 py-2 text-sm font-semibold text-muted transition-colors duration-200 hover:bg-brandSoft hover:text-brandStrong focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brandSoft">Compare</button>
-          </nav>
+  <div class="mx-auto max-w-[1440px] px-4 py-4 lg:px-8 lg:py-6">
+    <header class="mb-4 border-b border-[#dce4ee] pb-4">
+      <div class="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+        <div>
+          <div class="page-title">TotalSeg AI 工作台</div>
+          <p class="page-subtitle mt-1 text-sm">DICOM 分割與檢視</p>
         </div>
-        <div class="flex items-center gap-2">
-          <span id="device-label" class="rounded-full border border-[#d9e3f1] bg-[#eef3fb] px-3 py-1.5 text-xs text-muted">Runtime: pywebview</span>
+        <div class="flex items-center gap-3">
+          <button id="btn-open-settings" class="toolbar-btn cursor-pointer rounded-md px-3 py-2 text-sm font-medium">設定</button>
         </div>
       </div>
     </header>
 
-    <div id="ui-notice" class="mb-4 hidden rounded-xl border px-4 py-2 text-sm"></div>
+    <nav class="mb-4 flex items-center gap-2 border-b border-[#dce4ee] pb-3" aria-label="Main tabs">
+      <button id="tab-seg-btn" class="cursor-pointer rounded-md border border-[#d7e0eb] bg-white px-3 py-2 text-sm font-medium text-ink transition-colors duration-150 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brandSoft">自動分割</button>
+      <button id="tab-compare-btn" class="cursor-pointer rounded-md border border-transparent px-3 py-2 text-sm font-medium text-muted transition-colors duration-150 hover:bg-white hover:text-ink focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brandSoft">影像比對</button>
+    </nav>
+
+    <div id="ui-notice" class="mb-4 hidden rounded-md border px-4 py-2 text-sm"></div>
 
     <main id="main-content" class="space-y-4">
       <section id="seg-page" class="space-y-4">
           <div class="grid gap-4 2xl:grid-cols-[360px_1fr]">
             <aside class="space-y-4">
-              <section class="neu-card rounded-2xl p-5">
-                <h2 class="text-sm font-bold uppercase tracking-wide text-ink">Data Source</h2>
-                <p class="mt-1 text-xs text-muted">Select a DICOM root folder and auto-detect cases.</p>
-                <button id="btn-select-source" class="neu-btn mt-4 w-full cursor-pointer rounded-xl bg-brand px-4 py-3 text-sm font-semibold text-white transition-colors duration-200 hover:bg-brandStrong focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brandSoft">Select DICOM Folder</button>
-                <p id="source-label" class="neu-input mt-3 break-all rounded-lg px-3 py-2 text-xs text-muted">No folder selected</p>
+              <section class="shell-card rounded-xl p-5">
+                <div class="border-b border-[#e5ebf2] pb-3">
+                  <h2 class="text-base font-semibold text-ink">資料來源</h2>
+                </div>
+                <button id="btn-select-source" class="primary-btn mt-4 w-full cursor-pointer rounded-md px-4 py-3 text-sm font-semibold focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brandSoft">選擇 DICOM 資料夾</button>
+                <p id="source-label" class="soft-field mt-3 break-all rounded-md px-3 py-2 text-xs text-muted">尚未選擇資料夾</p>
                 <p id="range-hint" class="mt-2 text-xs text-muted"></p>
               </section>
 
-              <section class="neu-card rounded-2xl p-5">
-                <h2 class="text-sm font-bold uppercase tracking-wide text-ink">Model Config</h2>
+              <section class="shell-card rounded-xl p-5">
+                <div class="border-b border-[#e5ebf2] pb-3">
+                  <h2 class="text-base font-semibold text-ink">流程設定</h2>
+                </div>
                 <div class="mt-3 space-y-3 text-sm">
                   <label class="block">
-                    <span class="mb-1 block text-xs font-medium text-muted">Modality</span>
-                    <select id="modality" class="neu-input w-full rounded-lg px-3 py-2 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brandSoft">
+                    <span class="mb-1 block text-xs font-medium uppercase tracking-wide text-muted">影像類型</span>
+                    <select id="modality" class="soft-field w-full rounded-md px-3 py-2 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brandSoft">
                       <option>CT</option>
                       <option>MRI</option>
                     </select>
                   </label>
                   <label class="block">
-                    <span class="mb-1 block text-xs font-medium text-muted">Task</span>
-                    <select id="task" class="neu-input w-full rounded-lg px-3 py-2 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brandSoft"></select>
-                  </label>
-                  <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    <label class="neu-input flex items-center gap-2 rounded-lg px-3 py-2">
-                      <input id="chk-spine" type="checkbox" checked class="h-4 w-4 rounded border-[#ccd9ee] text-brand" />
-                      <span>Spine</span>
-                    </label>
-                    <label class="neu-input flex items-center gap-2 rounded-lg px-3 py-2">
-                      <input id="chk-fast" type="checkbox" class="h-4 w-4 rounded border-[#ccd9ee] text-brand" />
-                      <span>Fast</span>
-                    </label>
-                  </div>
-                  <label class="neu-input flex items-center gap-2 rounded-lg px-3 py-2">
-                    <input id="chk-draw" type="checkbox" checked class="h-4 w-4 rounded border-[#ccd9ee] text-brand" />
-                    <span>Auto Draw PNG</span>
+                    <span class="mb-1 block text-xs font-medium uppercase tracking-wide text-muted">分割任務</span>
+                    <select id="task" class="soft-field w-full rounded-md px-3 py-2 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brandSoft"></select>
                   </label>
                   <label class="block">
-                    <span class="mb-1 block text-xs font-medium text-muted">Erosion Iterations</span>
-                    <input id="erosion-iters" type="number" min="0" value="2" class="neu-input w-full rounded-lg px-3 py-2 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brandSoft" />
+                    <span class="mb-1 block text-xs font-medium uppercase tracking-wide text-muted">侵蝕次數</span>
+                    <input id="erosion-iters" type="number" min="0" value="2" class="soft-field w-full rounded-md px-3 py-2 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brandSoft" />
                   </label>
-                  <div class="rounded-xl border border-[#dfe7f2] bg-[#eef3fa] p-3">
+                  <div class="soft-card rounded-md p-3">
                     <label class="mb-2 flex items-center gap-2">
                       <input id="chk-range" type="checkbox" class="h-4 w-4 rounded border-[#ccd9ee] text-brand" />
-                      <span class="text-xs font-medium text-ink">Slice Range</span>
+                      <span class="text-xs font-medium uppercase tracking-wide text-ink">切片範圍</span>
                     </label>
                     <div class="grid grid-cols-2 gap-2">
                       <label>
-                        <span class="mb-1 block text-[11px] text-muted">Start</span>
-                        <input id="slice-start" type="number" min="1" value="1" class="neu-input w-full rounded-lg px-2 py-2" />
+                        <span class="mb-1 block text-[11px] text-muted">起始</span>
+                        <input id="slice-start" type="number" min="1" value="1" class="soft-field w-full rounded-md px-2 py-2" />
                       </label>
                       <label>
-                        <span class="mb-1 block text-[11px] text-muted">End</span>
-                        <input id="slice-end" type="number" min="1" placeholder="auto" class="neu-input w-full rounded-lg px-2 py-2" />
+                        <span class="mb-1 block text-[11px] text-muted">結束</span>
+                        <input id="slice-end" type="number" min="1" placeholder="auto" class="soft-field w-full rounded-md px-2 py-2" />
                       </label>
                     </div>
                   </div>
@@ -148,42 +199,57 @@
             </aside>
 
             <section class="space-y-4">
-              <section class="neu-card rounded-2xl p-5">
+              <section class="grid gap-3 lg:grid-cols-3">
+                <div class="stat-card rounded-lg px-4 py-3">
+                  <div class="stat-label">目前批次</div>
+                  <div id="progress-label-card" class="stat-value">0 / 0</div>
+                </div>
+                <div class="stat-card rounded-lg px-4 py-3">
+                  <div class="stat-label">目前病例</div>
+                  <div id="progress-case-card" class="stat-value text-base">待命中</div>
+                </div>
+                <div class="stat-card rounded-lg px-4 py-3">
+                  <div class="stat-label">記錄檔</div>
+                  <div id="session-log-path-card" class="mt-2 break-all text-sm text-muted">尚未開始</div>
+                </div>
+              </section>
+
+              <section class="shell-card rounded-xl p-5">
                 <div class="mb-4 flex items-center justify-between">
                   <div>
-                    <h2 class="text-sm font-bold uppercase tracking-wide text-ink">Case Queue</h2>
-                    <p class="text-xs text-muted">Select which cases to run.</p>
+                    <h2 class="text-base font-semibold text-ink">病例清單</h2>
                   </div>
                   <div class="flex gap-2">
-                    <button id="btn-select-all" class="neu-btn cursor-pointer rounded-lg border border-[#d7e2f2] bg-[#ecf2fa] px-3 py-1.5 text-xs font-medium text-muted hover:bg-[#e3ebf7]">Select All</button>
-                    <button id="btn-unselect-all" class="neu-btn cursor-pointer rounded-lg border border-[#d7e2f2] bg-[#ecf2fa] px-3 py-1.5 text-xs font-medium text-muted hover:bg-[#e3ebf7]">Clear</button>
+                    <button id="btn-select-all" class="toolbar-btn cursor-pointer rounded-md px-3 py-1.5 text-xs font-medium">全選</button>
+                    <button id="btn-unselect-all" class="toolbar-btn cursor-pointer rounded-md px-3 py-1.5 text-xs font-medium">清除</button>
                   </div>
                 </div>
-                <div class="overflow-hidden rounded-xl border border-[#d9e3f1] bg-[#f5f8fd]">
+                <div class="overflow-hidden rounded-md border border-[#dce4ee] bg-[#fbfcfe]">
                   <table class="w-full text-sm">
-                    <thead class="bg-brandSoft text-left text-ink">
+                    <thead class="bg-[#f2f6fb] text-left text-ink">
                       <tr>
                         <th class="w-12 px-3 py-3"></th>
-                        <th class="px-3 py-3">Case</th>
-                        <th class="w-52 px-3 py-3">Status</th>
+                        <th class="px-3 py-3">病例</th>
+                        <th class="w-52 px-3 py-3">狀態</th>
                       </tr>
                     </thead>
-                    <tbody id="task-table-body" class="divide-y divide-[#e7edf6] bg-[#f7f9fd]"></tbody>
+                    <tbody id="task-table-body" class="divide-y divide-[#e7edf6] bg-white"></tbody>
                   </table>
                 </div>
               </section>
 
-              <section class="neu-card rounded-2xl p-5">
-                <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <section class="shell-card rounded-xl p-5">
+                <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <div id="progress-label" class="text-sm font-semibold text-ink">Progress: 0 / 0</div>
-                    <div id="progress-case" class="text-xs text-muted">Idle</div>
+                    <div class="section-title">執行批次</div>
+                    <div id="progress-label" class="mt-3 text-sm font-semibold text-ink">進度：0 / 0</div>
+                    <div id="progress-case" class="text-xs text-muted">待命中</div>
                     <div id="session-log-path" class="mt-1 break-all text-[11px] text-muted"></div>
                   </div>
                   <div class="flex gap-2">
-                    <button id="btn-start" class="neu-btn cursor-pointer rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brandStrong">Start</button>
-                    <button id="btn-stop" class="neu-btn cursor-pointer rounded-xl border border-[#ead8df] bg-[#faf2f5] px-4 py-2 text-sm font-semibold text-danger hover:bg-[#f2e4ea]">Stop</button>
-                    <button id="btn-retry-failed" class="neu-btn cursor-pointer rounded-xl border border-[#eadbc7] bg-[#f7efe6] px-4 py-2 text-sm font-semibold text-warn hover:bg-[#f3e8db]">Retry Failed</button>
+                    <button id="btn-start" class="primary-btn cursor-pointer rounded-md px-4 py-2 text-sm font-semibold">開始</button>
+                    <button id="btn-stop" class="cursor-pointer rounded-md border border-[#ead8df] bg-[#faf2f5] px-4 py-2 text-sm font-semibold text-danger transition-colors hover:bg-[#f2e4ea]">停止</button>
+                    <button id="btn-retry-failed" class="cursor-pointer rounded-md border border-[#eadbc7] bg-[#f7efe6] px-4 py-2 text-sm font-semibold text-warn transition-colors hover:bg-[#f3e8db]">重試失敗病例</button>
                   </div>
                 </div>
                 <div class="h-2.5 overflow-hidden rounded-full bg-[#e3eaf5]">
@@ -196,62 +262,101 @@
 
         <section id="compare-page" class="hidden">
           <div class="grid gap-4 xl:grid-cols-[1fr_360px]">
-            <section class="neu-card rounded-2xl p-5">
-              <h2 class="text-sm font-bold uppercase tracking-wide text-ink">Compare Inputs</h2>
+            <section class="shell-card rounded-xl p-5">
+              <div class="border-b border-[#e5ebf2] pb-3">
+                <h2 class="text-base font-semibold text-ink">比對輸入</h2>
+              </div>
               <div class="mt-4 grid gap-4 md:grid-cols-2">
-                <div class="neu-input rounded-xl p-4">
-                  <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">AI Mask</div>
-                  <button id="btn-select-compare-ai" class="neu-btn w-full cursor-pointer rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-brandStrong">Select AI File</button>
-                  <p id="compare-ai-label" class="mt-2 break-all text-xs text-muted">No file selected</p>
+                <div class="soft-card rounded-md p-4">
+                  <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">AI 標記</div>
+                  <button id="btn-select-compare-ai" class="primary-btn w-full cursor-pointer rounded-md px-3 py-2 text-sm font-semibold">選擇 AI 檔案</button>
+                  <p id="compare-ai-label" class="mt-2 break-all text-xs text-muted">尚未選擇檔案</p>
                 </div>
-                <div class="neu-input rounded-xl p-4">
-                  <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Manual Mask</div>
-                  <button id="btn-select-compare-manual" class="neu-btn w-full cursor-pointer rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-brandStrong">Select Manual File</button>
-                  <p id="compare-manual-label" class="mt-2 break-all text-xs text-muted">No file selected</p>
+                <div class="soft-card rounded-md p-4">
+                  <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">人工標記</div>
+                  <button id="btn-select-compare-manual" class="primary-btn w-full cursor-pointer rounded-md px-3 py-2 text-sm font-semibold">選擇人工檔案</button>
+                  <p id="compare-manual-label" class="mt-2 break-all text-xs text-muted">尚未選擇檔案</p>
                 </div>
               </div>
-              <button id="btn-run-compare" class="neu-btn mt-4 cursor-pointer rounded-xl bg-brand px-5 py-2.5 text-sm font-semibold text-white hover:bg-brandStrong">Run Compare</button>
+              <button id="btn-run-compare" class="primary-btn mt-4 cursor-pointer rounded-md px-5 py-2.5 text-sm font-semibold">開始比對</button>
             </section>
 
-            <section class="neu-card rounded-2xl p-5">
-              <h3 class="mb-3 text-sm font-bold uppercase tracking-wide text-ink">Compare Result</h3>
-              <div id="compare-result" class="hidden rounded-xl border border-[#d9e3f1] bg-[#f3f6fc] p-4 text-sm text-ink"></div>
-              <div id="compare-empty" class="rounded-xl border border-dashed border-[#ccd8ed] bg-[#f3f6fc] p-6 text-center text-xs text-muted">No comparison result yet.</div>
+            <section class="shell-card rounded-xl p-5">
+              <div class="border-b border-[#e5ebf2] pb-3">
+                <h3 class="text-base font-semibold text-ink">比對結果</h3>
+              </div>
+              <div id="compare-result" class="hidden rounded-md border border-[#d9e3f1] bg-[#f7f9fc] p-4 text-sm text-ink"></div>
+              <div id="compare-empty" class="mt-4 rounded-md border border-dashed border-[#ccd8ed] bg-[#f7f9fc] p-6 text-center text-xs text-muted">尚無比對結果</div>
             </section>
           </div>
         </section>
 
-        <section class="neu-card rounded-2xl">
+        <section class="shell-card rounded-xl">
           <div class="flex flex-wrap items-center justify-between gap-2 border-b border-[#d9e3f1] px-4 py-3">
             <div>
-              <h3 class="text-sm font-bold uppercase tracking-wide text-ink">Runtime Logs</h3>
-              <p class="text-xs text-muted">Supports carriage-return rendering for tqdm style output.</p>
+              <h3 class="text-base font-semibold text-ink">執行記錄</h3>
             </div>
             <div class="flex items-center gap-2">
-              <button id="btn-copy-log" class="neu-btn cursor-pointer rounded-md border border-[#d7e2f2] bg-[#ecf2fa] px-2 py-1 text-xs text-muted hover:bg-[#e3ebf7]">Copy All</button>
-              <button id="btn-copy-error" class="neu-btn cursor-pointer rounded-md border border-[#d7e2f2] bg-[#ecf2fa] px-2 py-1 text-xs text-muted hover:bg-[#e3ebf7]">Copy Error</button>
-              <button id="btn-toggle-autoscroll" class="neu-btn cursor-pointer rounded-md border border-[#d7e2f2] bg-[#ecf2fa] px-2 py-1 text-xs text-muted hover:bg-[#e3ebf7]">Autoscroll: On</button>
-              <button id="btn-clear-log-view" class="neu-btn cursor-pointer rounded-md border border-[#d7e2f2] bg-[#ecf2fa] px-2 py-1 text-xs text-muted hover:bg-[#e3ebf7]">Clear View</button>
+              <button id="btn-copy-log" class="toolbar-btn cursor-pointer rounded-md px-2 py-1 text-xs">複製全部</button>
+              <button id="btn-clear-log-view" class="toolbar-btn cursor-pointer rounded-md px-2 py-1 text-xs">清空顯示</button>
             </div>
           </div>
           <div class="border-b border-[#d9e3f1] px-4 py-3">
-            <h4 class="text-xs font-semibold uppercase tracking-wide text-muted">Diagnostics</h4>
+            <h4 class="text-xs font-semibold uppercase tracking-wide text-muted">診斷資訊</h4>
             <div id="diagnostics-list" class="mt-2 space-y-2 text-sm text-ink"></div>
           </div>
-          <pre id="log-output" class="max-h-72 overflow-auto rounded-b-2xl border-t border-[#d9e3f1] bg-[#f8fbff] p-4 font-mono text-xs leading-relaxed text-[#23344d]"></pre>
+          <pre id="log-output" class="max-h-72 overflow-auto rounded-b-xl border-t border-[#d9e3f1] bg-[#fbfcfe] p-4 font-mono text-xs leading-relaxed text-[#23344d]"></pre>
         </section>
       </section>
     </main>
   </div>
 
   <div id="license-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-[#2f2a3d]/50 p-4">
-    <div class="neu-card w-full max-w-xl rounded-2xl p-5">
-      <h3 class="text-base font-bold text-ink">Apply TotalSegmentator License</h3>
-      <p class="mt-1 text-xs text-muted">Paste key or command, e.g. <code>totalseg_set_license -l aca_xxx</code>.</p>
-      <textarea id="license-input" class="neu-input mt-3 h-28 w-full rounded-lg px-3 py-2 text-sm" placeholder="aca_XXXX or command"></textarea>
+    <div class="shell-card w-full max-w-xl rounded-xl p-5">
+      <h3 class="text-base font-bold text-ink">套用 TotalSegmentator 授權</h3>
+      <p class="mt-1 text-xs text-muted">貼上 key 或指令，例如 <code>totalseg_set_license -l aca_xxx</code>。</p>
+      <button id="btn-license-open-url" class="mt-3 text-xs text-brandStrong underline underline-offset-2">開啟授權申請頁面</button>
+      <textarea id="license-input" class="soft-field mt-3 h-28 w-full rounded-md px-3 py-2 text-sm" placeholder="aca_XXXX or command"></textarea>
       <div class="mt-4 flex justify-end gap-2">
-        <button id="btn-license-cancel" class="neu-btn cursor-pointer rounded-lg border border-[#d7e2f2] bg-[#ecf2fa] px-4 py-2 text-sm text-muted hover:bg-[#e3ebf7]">Cancel</button>
-        <button id="btn-license-apply" class="neu-btn cursor-pointer rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brandStrong">Apply</button>
+        <button id="btn-license-cancel" class="toolbar-btn cursor-pointer rounded-md px-4 py-2 text-sm">取消</button>
+        <button id="btn-license-apply" class="primary-btn cursor-pointer rounded-md px-4 py-2 text-sm font-semibold">套用</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="settings-modal" class="settings-modal fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div class="shell-card w-full max-w-lg rounded-xl p-5">
+      <div class="border-b border-[#e5ebf2] pb-3">
+        <h3 class="text-base font-bold text-ink">設定</h3>
+        <p class="mt-1 text-sm text-muted">版本、更新與授權。</p>
+      </div>
+      <div class="mt-4 space-y-3">
+        <div class="soft-card rounded-md px-4 py-3">
+          <div class="text-xs font-medium uppercase tracking-wide text-muted">目前版本</div>
+          <div id="settings-current-version" class="mt-2 text-lg font-semibold text-ink">unknown</div>
+        </div>
+        <div class="soft-card rounded-md px-4 py-3">
+          <div class="text-xs font-medium uppercase tracking-wide text-muted">更新狀態</div>
+          <div id="settings-update-status" class="mt-2 text-sm text-ink">尚未檢查更新</div>
+          <div id="settings-update-hint" class="mt-1 text-xs text-muted"></div>
+          <div class="mt-3 flex flex-wrap gap-2">
+            <button id="btn-check-update" class="toolbar-btn cursor-pointer rounded-md px-3 py-2 text-sm">檢查更新</button>
+            <button id="btn-open-releases" class="toolbar-btn cursor-pointer rounded-md px-3 py-2 text-sm">開啟 Releases</button>
+            <button id="btn-install-update" class="primary-btn cursor-pointer rounded-md px-3 py-2 text-sm">更新到最新正式版</button>
+          </div>
+        </div>
+        <div class="soft-card rounded-md px-4 py-3">
+          <div class="text-xs font-medium uppercase tracking-wide text-muted">授權</div>
+          <p class="mt-2 text-xs text-muted">貼上 key 或指令，例如 `totalseg_set_license -l aca_xxx`。</p>
+          <button id="btn-settings-license-open-url" class="mt-2 text-xs text-brandStrong underline underline-offset-2">開啟授權申請頁面</button>
+          <textarea id="settings-license-input" class="soft-field mt-3 h-24 w-full rounded-md px-3 py-2 text-sm" placeholder="aca_XXXX or command"></textarea>
+          <div class="mt-3 flex justify-end">
+            <button id="btn-settings-license-apply" class="primary-btn cursor-pointer rounded-md px-4 py-2 text-sm">套用授權</button>
+          </div>
+        </div>
+      </div>
+      <div class="mt-4 flex justify-end">
+        <button id="btn-close-settings" class="toolbar-btn cursor-pointer rounded-md px-4 py-2 text-sm">關閉</button>
       </div>
     </div>
   </div>
