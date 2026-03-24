@@ -24,13 +24,7 @@ A medical image segmentation tool based on TotalSegmentator for CT image muscle 
 ### Quick Start
 
 #### **Windows**
-Double-click `START 啟動.bat` (Windows) to launch the WebView shell. On Mac/Linux, run `uv run python/gui_pyside.py`. Background dependencies will be auto-managed on first run via `uv`.
-
-#### **Mac/Linux**
-```bash
-cd python
-uv run gui_pyside.py
-```
+Double-click `START 啟動.bat` to launch the WebView shell. Background dependencies will be auto-managed on first run via `uv`.
 
 ### System Requirements
 
@@ -38,12 +32,6 @@ uv run gui_pyside.py
 - **Python**: 3.10
 - **GPU**: NVIDIA GPU recommended (CUDA support), CPU also supported
 - **Network**: Required for first-time installation
-
-### Cross-Platform Support
-
-- **Windows/Linux**: Automatically installs GPU version (CUDA 12.1)
-- **macOS**: Automatically installs CPU version
-- The launcher automatically detects your system and installs the appropriate PyTorch version
 
 ### Output Description
 
@@ -77,18 +65,6 @@ Optional CSV export:
 ```csv
 slice_number, manual_area_cm2, ai_area_cm2, dice_score
 45, 52.30, 48.70, 0.8900
-```
-
-### CLI Usage (Advanced)
-
-```bash
-cd python
-
-# Unified segmentation with new modality and range support
-uv run seg.py --dicom ../SER00005 --task total --modality MRI --slice_start 10 --slice_end 50 --auto_draw 1
-
-# Manual vs AI comparison
-uv run gui_pyside.py  # Switch to Comparison tab in unified UI
 ```
 
 ### Key Parameters
@@ -128,16 +104,6 @@ totalseg-muscle-tool/
     ├── draw.py           # PNG Visualization
     └── pyproject.toml    # Dependencies (uv)
 ```
-
-### Developer Docs
-
-For engineering handoff and AI-assisted development context, see:
-
-- `docs/INDEX.md`
-- `docs/PROJECT_MEMORY.md`
-- `docs/MODULE_MAP.md`
-- `docs/CSV_LOGIC.md`
-- `docs/CHANGELOG_DEV.md`
 
 ### Clinical Quick Guide
 
@@ -206,15 +172,9 @@ This project is open source for research and educational purposes.
 ### 快速開始
 
 #### **Windows**
-雙擊執行 `START 啟動.bat` (Windows) 啟動程式。首次執行會自動完成環境配置。
+雙擊執行 `START 啟動.bat` 啟動程式。首次執行會自動完成環境配置。
 
 > **溫馨提示**：若啟動失敗或無法讀取檔案，建議將解壓縮後的資料夾移至 **C 槽或 D 槽等純英文路徑下**執行，以避免 Windows 中文路徑造成的不可預期錯誤。
-
-#### **Mac/Linux**
-```bash
-cd python
-uv run gui_pyside.py
-```
 
 ### 系統需求
 
@@ -222,12 +182,6 @@ uv run gui_pyside.py
 - **Python**：3.10
 - **GPU**：建議使用 NVIDIA GPU（支援 CUDA），也支援 CPU
 - **網路**：第一次安裝時需要
-
-### 跨平台支援
-
-- **Windows/Linux**：自動安裝 GPU 版本（CUDA 12.1）
-- **macOS**：自動安裝 CPU 版本
-- 啟動器會自動偵測系統並安裝對應的 PyTorch 版本
 
 ### 輸出說明
 
@@ -263,18 +217,6 @@ slice_number, manual_area_cm2, ai_area_cm2, dice_score
 45, 52.30, 48.70, 0.8900
 ```
 
-### CLI 用法（進階）
-
-```bash
-cd python
-
-# 單檔/批次分割
-uv run seg.py --dicom ../SER00005 --task total --modality MRI --slice_start 10 --slice_end 50 --auto_draw 1
-
-# 手動 vs AI 比較
-uv run gui_pyside.py  # 在統一介面中切換至「比較分析」分頁
-```
-
 ### 主要參數
 
 - `--dicom`：DICOM 資料夾路徑
@@ -306,16 +248,6 @@ totalseg-muscle-tool/
     ├── draw.py           # PNG 疊圖繪製
     └── pyproject.toml    # 依賴套件清單 (uv)
 ```
-
-### 開發文檔（AI/工程接手）
-
-如需快速理解開發歷程與模組結構，請看：
-
-- `docs/INDEX.md`
-- `docs/PROJECT_MEMORY.md`
-- `docs/MODULE_MAP.md`
-- `docs/CSV_LOGIC.md`
-- `docs/CHANGELOG_DEV.md`
 
 ### 測試
 
