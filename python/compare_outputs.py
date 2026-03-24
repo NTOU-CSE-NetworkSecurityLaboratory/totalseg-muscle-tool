@@ -6,8 +6,8 @@ import json
 from pathlib import Path
 
 try:
-    import SimpleITK as sitk
     import numpy as np
+    import SimpleITK as sitk
 except Exception:  # pragma: no cover
     sitk = None
     np = None
