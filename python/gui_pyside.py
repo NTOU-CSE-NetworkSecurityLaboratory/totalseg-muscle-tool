@@ -6,6 +6,8 @@ import shutil
 import string
 import subprocess
 import sys
+import tempfile
+import webbrowser
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -38,6 +40,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.app_version import read_local_app_version
 from core.shared_core import (
     build_seg_command,
 )
@@ -58,6 +61,12 @@ from core.shared_core import (
 )
 from core.shared_core import (
     scan_dicom_cases as core_scan_dicom_cases,
+)
+from core.update_service import (
+    build_update_status,
+    download_release_zip,
+    extract_release_payload,
+    spawn_release_update,
 )
 
 # Try importing SimpleITK for erosion calculation
@@ -83,6 +92,8 @@ if IS_BUNDLED:
             shutil.copy2(src, dst)
 else:
     BASE_DIR = Path(__file__).parent
+APP_ROOT = BASE_DIR.parent if BASE_DIR.name == "python" else BASE_DIR
+APP_VERSION = read_local_app_version(BASE_DIR)
 
 
 def resolve_app_icon_path():
@@ -362,7 +373,7 @@ def parse_license_input(raw_text):
 class TotalSegApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("TotalSegmentator AI 影像管理系統 v0.0.1")
+        self.setWindowTitle(f"TotalSegmentator AI 影像管理系統 v{APP_VERSION}")
         self.resize(1150, 850)
         self.setStyleSheet(MODERN_STYLE)
         icon_path = resolve_app_icon_path()
@@ -394,10 +405,12 @@ class TotalSegApp(QMainWindow):
         
         self.compare_ai_mask = ""
         self.compare_manual_mask = ""
+        self.update_status = None
+        self.latest_release = None
 
         # 智慧解決方案引擎 (Solution Engine)
         self.solutions = {
-            "CUDA out of memory": "【建議解決方案】顯卡記憶體不足。請開啟「快速推論模式」或關閉其他佔用顯卡的程式。",
+            "CUDA out of memory": "【建議解決方案】顯卡記憶體不足。請關閉其他佔用顯卡的程式，或改以較小批次重新執行。",
             "No Series can be found": "【建議解決方案】找不到影像。請確認資料夾內包含標準 DICOM 檔案，或嘗試掃描更深層的目錄。",
             "UnicodeEncodeError": "【建議解決方案】檔案路徑包含特殊字元。請將資料夾移動至僅包含英文與數字的路徑。",
             "Permission denied": "【建議解決方案】存取被拒。請檢查資料夾權限，或暫時關閉可能攔截程式的防毒軟體。",
@@ -438,6 +451,10 @@ class TotalSegApp(QMainWindow):
         nav_layout.addWidget(self.btn_mode_compare)
 
         nav_layout.addStretch()
+
+        self.version_lbl = QLabel(f"版本 v{APP_VERSION}")
+        self.version_lbl.setStyleSheet("color: #6c757d; font-size: 11px; margin-right: 12px;")
+        nav_layout.addWidget(self.version_lbl)
         
         # Detected Device Label
         self.device_lbl = QLabel("後端推論引擎準備中...")
@@ -779,6 +796,36 @@ class TotalSegApp(QMainWindow):
         out_layout.addWidget(self.out_label)
         left_layout.addWidget(self.out_group)
         self.out_group.setVisible(False)
+
+        update_group = QGroupBox("4. 版本與更新")
+        update_layout = QVBoxLayout(update_group)
+
+        self.update_status_lbl = QLabel(f"目前版本：v{APP_VERSION}")
+        self.update_status_lbl.setWordWrap(True)
+        self.update_status_lbl.setStyleSheet("color: #495057; font-size: 11px;")
+        update_layout.addWidget(self.update_status_lbl)
+
+        self.update_hint_lbl = QLabel("可在此檢查最新正式版並更新。")
+        self.update_hint_lbl.setWordWrap(True)
+        self.update_hint_lbl.setStyleSheet("color: #6c757d; font-size: 11px;")
+        update_layout.addWidget(self.update_hint_lbl)
+
+        update_button_row = QHBoxLayout()
+        self.btn_check_update = QPushButton("檢查更新")
+        self.btn_check_update.clicked.connect(self.refresh_update_status)
+        update_button_row.addWidget(self.btn_check_update)
+
+        self.btn_install_update = QPushButton("更新到最新正式版")
+        self.btn_install_update.clicked.connect(self.install_latest_release_update)
+        self.btn_install_update.setEnabled(False)
+        update_button_row.addWidget(self.btn_install_update)
+        update_layout.addLayout(update_button_row)
+
+        self.btn_open_releases = QPushButton("開啟 Releases 頁面")
+        self.btn_open_releases.clicked.connect(self.open_releases_page)
+        update_layout.addWidget(self.btn_open_releases)
+
+        left_layout.addWidget(update_group)
         
         left_layout.addStretch()
         layout.addWidget(left_col)
@@ -1100,6 +1147,103 @@ class TotalSegApp(QMainWindow):
         self.log_area.moveCursor(QTextCursor.End)
         self._trim_log_area_if_needed()
         QApplication.processEvents(QEventLoop.ExcludeUserInputEvents, 5)
+
+    def refresh_update_status(self):
+        self.btn_check_update.setEnabled(False)
+        try:
+            status = build_update_status(app_root=APP_ROOT, python_base_dir=BASE_DIR)
+            self.update_status = status
+            self.latest_release = status.release
+
+            if status.latest_version is None:
+                self.update_status_lbl.setText(f"目前版本：v{status.current_version}")
+                self.update_hint_lbl.setText("目前無法取得最新正式版資訊。")
+                self.btn_install_update.setEnabled(False)
+                return
+
+            self.update_status_lbl.setText(
+                f"目前版本：v{status.current_version}｜最新正式版：v{status.latest_version}"
+            )
+
+            if not status.install_supported:
+                self.update_hint_lbl.setText(status.install_block_reason or "目前環境不支援 GUI 更新。")
+                self.btn_install_update.setEnabled(False)
+                return
+
+            if status.update_available:
+                self.update_hint_lbl.setText("偵測到較新正式版，可更新到最新 release。")
+                self.btn_install_update.setEnabled(True)
+            else:
+                self.update_hint_lbl.setText("目前已是最新正式版。")
+                self.btn_install_update.setEnabled(False)
+        except Exception as e:
+            self.update_status = None
+            self.latest_release = None
+            self.update_status_lbl.setText(f"目前版本：v{APP_VERSION}")
+            self.update_hint_lbl.setText(f"檢查更新失敗：{e}")
+            self.btn_install_update.setEnabled(False)
+        finally:
+            self.btn_check_update.setEnabled(True)
+
+    def open_releases_page(self):
+        target_url = "https://github.com/proadress/totalseg-muscle-tool/releases"
+        if self.update_status is not None:
+            target_url = self.update_status.release_page_url
+        webbrowser.open(target_url)
+
+    def install_latest_release_update(self):
+        self.refresh_update_status()
+        status = self.update_status
+        if status is None or status.release is None:
+            QMessageBox.warning(self, "更新失敗", "目前無法取得最新 release 資訊。")
+            return
+        if not status.install_supported:
+            QMessageBox.information(
+                self,
+                "目前環境不支援 GUI 更新",
+                status.install_block_reason or "這個安裝型態不支援 GUI 更新。",
+            )
+            return
+        if not status.update_available:
+            QMessageBox.information(self, "已是最新版本", "目前已是最新正式版。")
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            "確認更新",
+            (
+                f"目前版本：v{status.current_version}\n"
+                f"最新正式版：v{status.latest_version}\n\n"
+                "程式會下載最新 release，關閉目前視窗後完成更新並重新啟動。"
+            ),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        if confirm != QMessageBox.Yes:
+            return
+
+        try:
+            release = status.release
+            work_dir = Path(tempfile.mkdtemp(prefix="totalseg_release_gui_"))
+            zip_path = download_release_zip(release, work_dir / f"{release.tag_name}.zip")
+            payload_root = extract_release_payload(zip_path, work_dir / "extract")
+            spawn_release_update(
+                app_root=APP_ROOT,
+                payload_root=payload_root,
+                current_pid=os.getpid(),
+                launcher_path=APP_ROOT / "START 啟動.bat",
+            )
+        except Exception as e:
+            QMessageBox.critical(self, "更新失敗", str(e))
+            self.append_log(f"[錯誤] 更新失敗：{e}\n")
+            return
+
+        QMessageBox.information(
+            self,
+            "開始更新",
+            "已啟動更新程序。主視窗關閉後會套用最新正式版並重新開啟。",
+        )
+        self.close()
 
     def start_unified_process(self):
         self.log_area.clear()

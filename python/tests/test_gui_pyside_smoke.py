@@ -10,6 +10,7 @@ pytest.importorskip("PySide6")
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QCheckBox, QHBoxLayout, QTableWidgetItem, QWidget
 
+from core.update_service import UpdateStatus
 from gui_pyside import TotalSegApp, filter_tasks_by_modality, parse_license_input
 
 
@@ -53,6 +54,8 @@ def test_gui_defaults(window):
     assert not window.out_group.isVisible()
     assert window.log_area.minimumHeight() == 320
     assert window.log_area.maximumHeight() > 100000
+    assert window.update_status_lbl.text().startswith("目前版本：v")
+    assert window.btn_install_update.isEnabled() is False
 
 
 def test_compare_copy_updated(window):
@@ -218,7 +221,24 @@ def test_mask_license_key(window):
     masked = window._mask_license_key("aca_T9Z5DWL7XWRMT2")
     assert masked.startswith("aca_")
     assert masked.endswith("RMT2")
-    assert "*" in masked
+
+
+def test_refresh_update_status_blocks_git_checkout(window, monkeypatch):
+    status = UpdateStatus(
+        current_version="0.0.1",
+        latest_version="0.0.2",
+        update_available=True,
+        install_supported=False,
+        install_block_reason="GUI 更新器不支援直接覆蓋開發中的 git 工作目錄。",
+        release_page_url="https://example.com/release",
+        release=None,
+    )
+    monkeypatch.setattr("gui_pyside.build_update_status", lambda **_kwargs: status)
+
+    window.refresh_update_status()
+
+    assert "git 工作目錄" in window.update_hint_lbl.text()
+    assert window.btn_install_update.isEnabled() is False
 
 
 def test_parse_license_input_raw_key():
