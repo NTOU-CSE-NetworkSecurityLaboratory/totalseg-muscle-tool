@@ -96,12 +96,6 @@ totalseg-muscle-tool/
     └── pyproject.toml    # Dependencies (uv)
 ```
 
-### Clinical Quick Guide
-
-For clinician-facing quick operation notes, see:
-
-- `docs/DOCTOR_QUICK_GUIDE.md`
-
 ### Testing & Quality Checks
 
 ```bash

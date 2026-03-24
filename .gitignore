@@ -42,3 +42,6 @@ mock_*/
 /NEW
 *.zip
 *.tar.gz
+
+# Docs are kept local only
+docs/
