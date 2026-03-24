@@ -26,9 +26,18 @@ A medical image segmentation tool based on TotalSegmentator for CT image muscle 
 #### **Windows**
 Double-click `START 啟動.bat` to launch the WebView shell. Background dependencies will be auto-managed on first run via `uv`.
 
+#### **Doctor Quick Guide**
+1. Double-click `START 啟動.bat`
+2. Select the DICOM folder
+3. Choose cases to process
+4. Select `CT` or `MRI`
+5. Set slice range if needed
+6. Click `Start`
+7. Review outputs and logs on the right
+
 ### System Requirements
 
-- **OS**: Windows 10/11, macOS, or Linux
+- **OS**: Windows 10/11
 - **Python**: 3.10
 - **GPU**: NVIDIA GPU recommended (CUDA support), CPU also supported
 - **Network**: Required for first-time installation
@@ -39,13 +48,15 @@ Double-click `START 啟動.bat` to launch the WebView shell. Background dependen
 
 Example: Input `SER00005/`, output will be created in `SER00005_output/`:
 
-- `segmentation_<task>/`: One mask per structure (`*.nii.gz`) + `statistics.json`
-- `mask_<task>.csv`: Analysis results (4 sections)
+- `segmentation_<task>/`: One mask per structure (`*.nii.gz`) and `statistics.json`
+- `segmentation_spine/`: Spine segmentation masks
+- `mask_<task>.csv`: Main analysis CSV (4 sections)
   - Section 1: Area per slice (cm²)
   - Section 2: Average HU per slice (with erosion, weighted by area for L/R muscles)
   - Section 3: HU standard deviation per slice (with erosion, weighted by area)
   - Section 4: Overall summary (pixelcount / volume_cm³ / mean_hu, L/R muscles combined)
-- `png/`: PNG overlay for each slice (if enabled)
+- `mask_spine_fast.csv`: Spine CSV
+- `png/`: One PNG overlay per slice
 
 #### **Tool 2: Batch Processing Output**
 
@@ -61,18 +72,10 @@ Results displayed in real-time in GUI:
 - AI Area (cm²): TotalSegmentator segmentation area on same slice
 - Dice Score: Similarity between masks (formula: `2 * |A ∩ B| / (|A| + |B|)`)
 
-Optional CSV export:
-```csv
-slice_number, manual_area_cm2, ai_area_cm2, dice_score
-45, 52.30, 48.70, 0.8900
-```
-
-Fixed pipeline behavior in the current refactor branch:
+Fixed pipeline behavior:
 - spine output is always enabled
 - PNG overlay generation is always enabled
 - fast mode is removed from the normal workflow
-- legacy `--spine`, `--fast`, `--auto_draw` flags are still accepted for compatibility, but normalized internally
-- `--skip_segmentation` can reuse existing segmentation folders and regenerate CSV / PNG outputs without rerunning TotalSegmentator
 
 ### Calculation Logic
 
@@ -85,15 +88,14 @@ Fixed pipeline behavior in the current refactor branch:
 
 ### Project Structure
 
-```
+```text
 totalseg-muscle-tool/
-totalseg-muscle-tool/
-├── START 啟動.bat          # Windows double-click launcher
+├── START 啟動.bat
 └── python/
-    ├── gui_pyside.py     # Unified PySide6 GUI (Single/Batch/Compare)
-    ├── seg.py            # Segmentation core
-    ├── draw.py           # PNG Visualization
-    └── pyproject.toml    # Dependencies (uv)
+    ├── pywebview_tailwind_shell/   # WebView GUI
+    ├── seg.py                      # Segmentation core
+    ├── draw.py                     # PNG overlay
+    └── pyproject.toml              # Dependencies
 ```
 
 ### Testing & Quality Checks
@@ -159,11 +161,20 @@ This project is open source for research and educational purposes.
 #### **Windows**
 雙擊執行 `START 啟動.bat` 啟動程式。首次執行會自動完成環境配置。
 
+#### **醫師快速操作**
+1. 雙擊 `START 啟動.bat`
+2. 按 `選擇 DICOM 資料夾` 載入病例
+3. 勾選要處理的病例
+4. 選擇 `CT` 或 `MRI`
+5. 視需要設定切片範圍
+6. 按 `開始` 執行
+7. 在右側查看輸出與執行記錄
+
 > **溫馨提示**：若啟動失敗或無法讀取檔案，建議將解壓縮後的資料夾移至 **C 槽或 D 槽等純英文路徑下**執行，以避免 Windows 中文路徑造成的不可預期錯誤。
 
 ### 系統需求
 
-- **作業系統**：Windows 10/11、macOS 或 Linux
+- **作業系統**：Windows 10/11
 - **Python**：3.10
 - **GPU**：建議使用 NVIDIA GPU（支援 CUDA），也支援 CPU
 - **網路**：第一次安裝時需要
@@ -174,13 +185,15 @@ This project is open source for research and educational purposes.
 
 範例：輸入 `SER00005/`，輸出會建立在 `SER00005_output/`：
 
-- `segmentation_<task>/`：每個結構一個遮罩（`*.nii.gz`）+ `statistics.json`
-- `mask_<task>.csv`：分析結果（4 個區塊）
+- `segmentation_<task>/`：每個結構一個遮罩（`*.nii.gz`）與 `statistics.json`
+- `segmentation_spine/`：脊椎分割遮罩
+- `mask_<task>.csv`：主要分析 CSV（4 個區塊）
   - 區塊 1：每層面積（cm²）
   - 區塊 2：每層平均 HU（經侵蝕處理，左右肌肉按面積加權合併）
   - 區塊 3：每層 HU 標準差（經侵蝕處理，左右肌肉按面積加權合併）
   - 區塊 4：整體摘要（pixelcount / volume_cm³ / mean_hu，左右肌肉合併）
-- `png/`：每層一張疊圖 PNG（若有開啟）
+- `mask_spine_fast.csv`：脊椎 CSV
+- `png/`：每層一張疊圖 PNG
 
 #### **工具 2：批次處理輸出**
 
@@ -196,11 +209,11 @@ This project is open source for research and educational purposes.
 - AI 面積（cm²）：TotalSegmentator 在同一層的分割面積
 - Dice 分數：兩個遮罩的相似度（公式：`2 * |A ∩ B| / (|A| + |B|)`）
 
-可選擇性匯出 CSV：
-```csv
-slice_number, manual_area_cm2, ai_area_cm2, dice_score
-45, 52.30, 48.70, 0.8900
-```
+固定流程：
+- 一定會做脊椎分割
+- 一定會產生 CSV
+- 一定會產生 PNG 疊圖
+- `fast` 不在正式流程中
 
 ### 計算邏輯
 
@@ -213,15 +226,14 @@ slice_number, manual_area_cm2, ai_area_cm2, dice_score
 
 ### 專案結構
 
-```
+```text
 totalseg-muscle-tool/
-totalseg-muscle-tool/
-├── START 啟動.bat                # Windows 雙擊啟動腳本
+├── START 啟動.bat
 └── python/
-    ├── gui_pyside.py     # 統一的 PySide6 視覺化介面 (包含單檔、批次、比較)
-    ├── seg.py            # 分割核心演算法
-    ├── draw.py           # PNG 疊圖繪製
-    └── pyproject.toml    # 依賴套件清單 (uv)
+    ├── pywebview_tailwind_shell/   # WebView 介面
+    ├── seg.py                      # 分割核心
+    ├── draw.py                     # PNG 疊圖
+    └── pyproject.toml              # 依賴套件
 ```
 
 ### 測試
