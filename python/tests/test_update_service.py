@@ -8,6 +8,7 @@ from core.update_service import (
     ensure_update_supported_install,
     extract_release_payload,
     is_newer_version,
+    _build_update_runner_script,
 )
 
 
@@ -99,3 +100,11 @@ def test_build_update_log_path_uses_app_root_log_dir(tmp_path):
     assert log_path.parent == tmp_path / "totalseg_update_logs"
     assert log_path.name.startswith("update_")
     assert log_path.suffix == ".log"
+
+
+def test_update_runner_script_uses_windows_wait_api():
+    script = _build_update_runner_script()
+
+    assert "WaitForSingleObject" in script
+    assert "OpenProcess" in script
+    assert "wait_for_process_exit_windows" in script

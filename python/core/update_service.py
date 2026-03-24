@@ -166,6 +166,7 @@ def _build_update_runner_script() -> str:
         from __future__ import annotations
 
         import argparse
+        import ctypes
         import os
         import shutil
         import traceback
@@ -184,7 +185,33 @@ def _build_update_runner_script() -> str:
                 handle.write(f"[{ts}] {message}\\n")
 
 
+        def wait_for_process_exit_windows(pid: int, timeout_sec: int) -> None:
+            kernel32 = ctypes.windll.kernel32
+            SYNCHRONIZE = 0x00100000
+            WAIT_OBJECT_0 = 0x00000000
+            WAIT_TIMEOUT = 0x00000102
+
+            handle = kernel32.OpenProcess(SYNCHRONIZE, False, pid)
+            if not handle:
+                return
+
+            try:
+                timeout_ms = max(0, int(timeout_sec * 1000))
+                result = kernel32.WaitForSingleObject(handle, timeout_ms)
+                if result == WAIT_OBJECT_0:
+                    return
+                if result == WAIT_TIMEOUT:
+                    raise RuntimeError(f"Timed out waiting for process {pid} to exit")
+                raise RuntimeError(f"WaitForSingleObject failed for process {pid}: {result}")
+            finally:
+                kernel32.CloseHandle(handle)
+
+
         def wait_for_process_exit(pid: int, timeout_sec: int = 120) -> None:
+            if os.name == "nt":
+                wait_for_process_exit_windows(pid, timeout_sec)
+                return
+
             deadline = time.time() + timeout_sec
             while time.time() < deadline:
                 try:
