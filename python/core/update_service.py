@@ -9,6 +9,7 @@ import tempfile
 import textwrap
 import zipfile
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from urllib.request import urlopen
 
@@ -19,6 +20,7 @@ LATEST_RELEASE_API_URL = (
     "https://api.github.com/repos/NTOU-CSE-NetworkSecurityLaboratory/totalseg-muscle-tool/releases/latest"
 )
 _UPDATE_RUNNER_NAME = "totalseg_release_updater.py"
+_UPDATE_LOG_DIR_NAME = "totalseg_update_logs"
 _SKIP_NAMES = {
     ".git",
     ".pytest_cache",
@@ -151,6 +153,13 @@ def extract_release_payload(zip_path: str | Path, destination: str | Path) -> Pa
     raise RuntimeError("更新壓縮檔缺少 python/pyproject.toml，無法辨識程式根目錄。")
 
 
+def build_update_log_path(app_root: str | Path) -> Path:
+    app_root = Path(app_root).resolve()
+    log_dir = app_root / _UPDATE_LOG_DIR_NAME
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return log_dir / f"update_{ts}.log"
+
+
 def _build_update_runner_script() -> str:
     return textwrap.dedent(
         """
@@ -159,11 +168,20 @@ def _build_update_runner_script() -> str:
         import argparse
         import os
         import shutil
+        import traceback
         import sys
         import time
+        from datetime import datetime
         from pathlib import Path
 
         SKIP_NAMES = {".git", ".pytest_cache", ".pytest-tmp", ".ruff_cache", ".uv-cache", ".venv", "__pycache__"}
+
+
+        def write_log(path: Path, message: str) -> None:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            with path.open("a", encoding="utf-8") as handle:
+                handle.write(f"[{ts}] {message}\\n")
 
 
         def wait_for_process_exit(pid: int, timeout_sec: int = 120) -> None:
@@ -206,18 +224,34 @@ def _build_update_runner_script() -> str:
             parser.add_argument("--source", required=True)
             parser.add_argument("--pid", required=True, type=int)
             parser.add_argument("--launcher", required=True)
+            parser.add_argument("--log-path", required=True)
             args = parser.parse_args()
 
             target = Path(args.target)
             source = Path(args.source)
             launcher = Path(args.launcher)
+            log_path = Path(args.log_path)
 
-            wait_for_process_exit(args.pid)
-            overlay_tree(source, target)
+            write_log(log_path, f"Updater started. target={target}")
+            write_log(log_path, f"Payload source={source}")
+            write_log(log_path, f"Waiting for process pid={args.pid} to exit")
+            try:
+                wait_for_process_exit(args.pid)
+                write_log(log_path, "Process exited. Starting overlay copy")
+                overlay_tree(source, target)
+                write_log(log_path, "Overlay copy completed")
 
-            if launcher.exists():
-                os.startfile(str(launcher))  # type: ignore[attr-defined]
-            return 0
+                if launcher.exists():
+                    write_log(log_path, f"Restarting launcher: {launcher}")
+                    os.startfile(str(launcher))  # type: ignore[attr-defined]
+                else:
+                    write_log(log_path, f"Launcher missing: {launcher}")
+                write_log(log_path, "Updater finished successfully")
+                return 0
+            except Exception:
+                write_log(log_path, "Updater failed with exception:")
+                write_log(log_path, traceback.format_exc().rstrip())
+                raise
 
 
         if __name__ == "__main__":
@@ -233,11 +267,12 @@ def spawn_release_update(
     current_pid: int,
     launcher_path: str | Path,
     python_executable: str | Path | None = None,
-) -> Path:
+) -> tuple[Path, Path]:
     app_root = Path(app_root).resolve()
     payload_root = Path(payload_root).resolve()
     launcher_path = Path(launcher_path).resolve()
     python_executable = str(python_executable or sys.executable)
+    log_path = build_update_log_path(app_root)
 
     runner_dir = Path(tempfile.mkdtemp(prefix="totalseg_release_update_"))
     runner_path = runner_dir / _UPDATE_RUNNER_NAME
@@ -255,6 +290,8 @@ def spawn_release_update(
             str(current_pid),
             "--launcher",
             str(launcher_path),
+            "--log-path",
+            str(log_path),
         ],
         "cwd": str(runner_dir),
         "close_fds": True,
@@ -266,4 +303,4 @@ def spawn_release_update(
         popen_kwargs["start_new_session"] = True
 
     subprocess.Popen(**popen_kwargs)
-    return runner_path
+    return runner_path, log_path

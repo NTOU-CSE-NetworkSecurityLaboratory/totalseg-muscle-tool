@@ -368,13 +368,19 @@ class AppApi:
         work_dir = Path(tempfile.mkdtemp(prefix="totalseg_release_webview_"))
         zip_path = download_release_zip(status.release, work_dir / f"{status.release.tag_name}.zip")
         payload_root = extract_release_payload(zip_path, work_dir / "extract")
-        spawn_release_update(
+        _runner_path, log_path = spawn_release_update(
             app_root=self._app_root,
             payload_root=payload_root,
             current_pid=os.getpid(),
             launcher_path=self._app_root / "START 啟動.bat",
         )
-        return {"ok": True, "message": "已啟動更新程序。關閉主視窗後會套用最新正式版。"}
+        return {
+            "ok": True,
+            "message": (
+                "已啟動更新程序。關閉主視窗後會套用最新正式版。"
+                f" 更新記錄：{log_path}"
+            ),
+        }
 
     def submit_license(self, raw_input: str) -> dict[str, Any]:
         key = self._parse_license_input(raw_input)

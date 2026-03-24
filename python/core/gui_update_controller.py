@@ -103,7 +103,7 @@ class GuiUpdateController:
             work_dir = Path(tempfile.mkdtemp(prefix="totalseg_release_gui_"))
             zip_path = download_release_zip(release, work_dir / f"{release.tag_name}.zip")
             payload_root = extract_release_payload(zip_path, work_dir / "extract")
-            spawn_release_update(
+            _runner_path, log_path = spawn_release_update(
                 app_root=self.app_root,
                 payload_root=payload_root,
                 current_pid=os.getpid(),
@@ -117,6 +117,9 @@ class GuiUpdateController:
         QMessageBox.information(
             self.window,
             "開始更新",
-            "已啟動更新程序。主視窗關閉後會套用最新正式版並重新開啟。",
+            (
+                "已啟動更新程序。主視窗關閉後會套用最新正式版並重新開啟。\n\n"
+                f"更新記錄：{log_path}"
+            ),
         )
         self.window.close()

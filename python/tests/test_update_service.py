@@ -3,6 +3,7 @@ import zipfile
 
 from core.update_service import (
     ReleaseInfo,
+    build_update_log_path,
     build_update_status,
     ensure_update_supported_install,
     extract_release_payload,
@@ -90,3 +91,11 @@ def test_extract_release_payload_finds_project_root(tmp_path):
 
     assert payload_root.name == "totalseg-muscle-tool-main"
     assert (payload_root / "python" / "pyproject.toml").exists()
+
+
+def test_build_update_log_path_uses_app_root_log_dir(tmp_path):
+    log_path = build_update_log_path(tmp_path)
+
+    assert log_path.parent == tmp_path / "totalseg_update_logs"
+    assert log_path.name.startswith("update_")
+    assert log_path.suffix == ".log"
