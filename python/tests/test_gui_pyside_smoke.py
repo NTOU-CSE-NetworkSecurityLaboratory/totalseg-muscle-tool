@@ -233,7 +233,7 @@ def test_refresh_update_status_blocks_git_checkout(window, monkeypatch):
         release_page_url="https://example.com/release",
         release=None,
     )
-    monkeypatch.setattr("gui_pyside.build_update_status", lambda **_kwargs: status)
+    monkeypatch.setattr("core.gui_update_controller.build_update_status", lambda **_kwargs: status)
 
     window.refresh_update_status()
 
