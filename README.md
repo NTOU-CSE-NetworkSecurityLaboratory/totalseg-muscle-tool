@@ -67,15 +67,6 @@ slice_number, manual_area_cm2, ai_area_cm2, dice_score
 45, 52.30, 48.70, 0.8900
 ```
 
-### Key Parameters
-
-- `--dicom`: DICOM folder path
-- `--out`: Output root directory
-- `--task`: TotalSegmentator task
-- `--modality`: CT or MRI
-- `--slice_start` / `--slice_end`: Range for volume calculation
-- `--erosion_iters`: Erosion iterations (default: 2)
-
 Fixed pipeline behavior in the current refactor branch:
 - spine output is always enabled
 - PNG overlay generation is always enabled
@@ -216,16 +207,6 @@ This project is open source for research and educational purposes.
 slice_number, manual_area_cm2, ai_area_cm2, dice_score
 45, 52.30, 48.70, 0.8900
 ```
-
-### 主要參數
-
-- `--dicom`：DICOM 資料夾路徑
-- `--out`：輸出根目錄（預設為 DICOM 資料夾的 parent）
-- `--task`：TotalSegmentator 任務
-- `--fast 1`：快速模式（較快但精度可能下降）
-- `--spine 1`：額外執行脊椎分割
-- `--auto_draw 1`：分割完成後自動產生 PNG 疊圖
-- `--erosion_iters`：HU 計算用的侵蝕次數（預設：2）
 
 ### 計算邏輯
 
