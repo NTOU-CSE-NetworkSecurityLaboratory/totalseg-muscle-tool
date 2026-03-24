@@ -21,6 +21,6 @@ if errorlevel 1 (
     if exist "%USERPROFILE%\.cargo\bin\uv.exe" set "PATH=%USERPROFILE%\.cargo\bin;%PATH%"
 )
 
-REM 建議把入口檔改成 gui_pyside.pyw，uv 會用 pythonw 跑（不綁 console）[page:2]
-start "" powershell -WindowStyle Hidden -Command "uv run gui_pyside.py"
+REM 改為啟動 WebView 正式入口
+start "" powershell -WindowStyle Hidden -Command "uv run python -m pywebview_tailwind_shell.app"
 exit

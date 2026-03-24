@@ -24,7 +24,7 @@ A medical image segmentation tool based on TotalSegmentator for CT image muscle 
 ### Quick Start
 
 #### **Windows**
-Double-click `START 啟動.bat` (Windows) or run `uv run python/gui_pyside.py` (Mac/Linux) to launch. Background dependencies will be auto-managed on first run via `uv`.
+Double-click `START 啟動.bat` (Windows) to launch the WebView shell. On Mac/Linux, run `uv run python/gui_pyside.py`. Background dependencies will be auto-managed on first run via `uv`.
 
 #### **Mac/Linux**
 ```bash

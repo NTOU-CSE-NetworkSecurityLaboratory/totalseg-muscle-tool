@@ -50,7 +50,6 @@ norecursedirs = [
     ".uv-cache",
     "pytestsandbox",
     "tmp*",
-    "pywebview_minimal",
     "pywebview_tailwind_shell",
 ]
 pythonpath = ["."]
@@ -66,7 +65,6 @@ exclude = [
     ".uv-cache",
     "pytestsandbox",
     "tmp*",
-    "pywebview_minimal",
     "pywebview_tailwind_shell",
 ]
 
@@ -91,7 +89,6 @@ exclude = [
     ".uv-cache",
     "pytestsandbox",
     "tmp*",
-    "pywebview_minimal",
     "pywebview_tailwind_shell",
 ]
 typeCheckingMode = "basic"
