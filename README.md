@@ -1,4 +1,4 @@
-# TotalSeg Muscle Tool (v0.1.0)
+# TotalSeg Muscle Tool (v0.1.1)
 
 [English](#english) | [中文](#中文)
 

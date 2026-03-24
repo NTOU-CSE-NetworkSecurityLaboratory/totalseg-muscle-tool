@@ -1,6 +1,6 @@
 [project]
 name = "calculate-muscle-areas"
-version = "0.1.0"
+version = "0.1.1"
 description = "Muscle Area Calculator using TotalSegmentator"
 requires-python = ">=3.10,<3.11"
 dependencies = [
