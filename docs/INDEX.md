@@ -7,7 +7,8 @@
 1. 先看 [MODULE_MAP.md](./MODULE_MAP.md)：理解主流程與模組責任。
 2. 再看 [CSV_LOGIC.md](./CSV_LOGIC.md)：理解 `start-end` 與 CSV 欄位口徑。
 3. 再看 [PROJECT_MEMORY.md](./PROJECT_MEMORY.md)：掌握歷史決策與已知限制。
-4. 最後看 [CHANGELOG_DEV.md](./CHANGELOG_DEV.md)：確認近期變更與風險。
+4. 看 [REFRACTOR_FIXED_PIPELINE_SPEC.md](./REFRACTOR_FIXED_PIPELINE_SPEC.md)：確認目前已講死的重構方向。
+5. 最後看 [CHANGELOG_DEV.md](./CHANGELOG_DEV.md)：確認近期變更與風險。
 
 ## Repo 入口
 

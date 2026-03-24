@@ -1,6 +1,6 @@
 [project]
 name = "calculate-muscle-areas"
-version = "0.0.1"
+version = "0.1.0"
 description = "Muscle Area Calculator using TotalSegmentator"
 requires-python = ">=3.10,<3.11"
 dependencies = [
@@ -17,6 +17,7 @@ dependencies = [
     "slicerio>=0.3.1",
     "pyside6>=6.10.2",
     "pyqtdarktheme>=2.1.0",
+    "pywebview>=6.1",
 ]
 
 # Windows/Linux GPU 環境：使用 CUDA 12.8
@@ -34,8 +35,76 @@ torchaudio = { index = "pytorch-cu128", marker = "sys_platform != 'darwin'" }
 
 [dependency-groups]
 dev = [
+    "basedpyright>=1.31.4",
     "pytest>=8.4.2",
+    "ruff>=0.12.12",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+norecursedirs = [
+    ".venv",
+    ".pytest_cache",
+    ".pytest-tmp",
+    ".ruff_cache",
+    ".uv-cache",
+    "pytestsandbox",
+    "tmp*",
+    "pywebview_minimal",
+    "pywebview_tailwind_shell",
+]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+exclude = [
+    ".venv",
+    ".pytest_cache",
+    ".pytest-tmp",
+    ".ruff_cache",
+    ".uv-cache",
+    "pytestsandbox",
+    "tmp*",
+    "pywebview_minimal",
+    "pywebview_tailwind_shell",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["E501"]
+
+[tool.basedpyright]
+include = [
+    "auto_draw_cmd.py",
+    "draw.py",
+    "gui_pyside.py",
+    "seg.py",
+    "tests",
+    "core",
+]
+exclude = [
+    ".venv",
+    ".pytest_cache",
+    ".pytest-tmp",
+    ".ruff_cache",
+    ".uv-cache",
+    "pytestsandbox",
+    "tmp*",
+    "pywebview_minimal",
+    "pywebview_tailwind_shell",
+]
+typeCheckingMode = "basic"
+pythonVersion = "3.10"
+reportMissingTypeStubs = false
+reportAny = false
+reportExplicitAny = false
+reportUnknownVariableType = false
+reportUnknownMemberType = false
+reportUnknownArgumentType = false
+reportUnknownParameterType = false
+reportUnknownLambdaType = false
+reportUnusedCallResult = false
+reportArgumentType = false
+reportAttributeAccessIssue = false
+reportOptionalMemberAccess = false

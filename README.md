@@ -1,4 +1,4 @@
-# TotalSeg Muscle Tool (v0.0.1)
+# TotalSeg Muscle Tool (v0.1.0)
 
 [English](#english) | [中文](#中文)
 
@@ -98,10 +98,14 @@ uv run gui_pyside.py  # Switch to Comparison tab in unified UI
 - `--task`: TotalSegmentator task
 - `--modality`: CT or MRI
 - `--slice_start` / `--slice_end`: Range for volume calculation
-- `--fast 1`: Fast mode
-- `--spine 1`: Additional spine segmentation
-- `--auto_draw 1`: Auto-generate PNG overlays
 - `--erosion_iters`: Erosion iterations (default: 2)
+
+Fixed pipeline behavior in the current refactor branch:
+- spine output is always enabled
+- PNG overlay generation is always enabled
+- fast mode is removed from the normal workflow
+- legacy `--spine`, `--fast`, `--auto_draw` flags are still accepted for compatibility, but normalized internally
+- `--skip_segmentation` can reuse existing segmentation folders and regenerate CSV / PNG outputs without rerunning TotalSegmentator
 
 ### Calculation Logic
 
@@ -141,16 +145,19 @@ For clinician-facing quick operation notes, see:
 
 - `docs/DOCTOR_QUICK_GUIDE.md`
 
-### Testing
+### Testing & Quality Checks
 
 ```bash
 cd python
 uv run pytest -q
+uv run ruff check .
+uv run basedpyright .
 ```
 
 Core tests include:
 - command assembly (`test_auto_draw_cmd.py`)
 - GUI smoke checks for defaults/copy/path rules (`test_gui_pyside_smoke.py`)
+- slice ordering / PNG naming behavior (`test_seg_draw_slice_behavior.py`)
 
 ### FAQ
 

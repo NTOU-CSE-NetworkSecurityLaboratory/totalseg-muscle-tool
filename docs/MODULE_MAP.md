@@ -46,7 +46,7 @@
 - `auto_draw`
   - 影響：是否輸出 PNG，不影響 CSV 數值
 
-## WebView Reference
+## UI Direction
 
-- Shell UI doc: `python/pywebview_tailwind_shell/README.md`
-- Readiness note: `docs/WEBVIEW_UI_STATUS.md`
+- Supported shell: `python/gui_pyside.py`
+- WebView is no longer the target architecture; see `docs/REFRACTOR_FIXED_PIPELINE_SPEC.md`

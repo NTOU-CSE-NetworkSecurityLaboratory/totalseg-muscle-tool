@@ -1,15 +1,23 @@
 ﻿const ui = {
   tabSegBtn: document.getElementById("tab-seg-btn"),
   tabCompareBtn: document.getElementById("tab-compare-btn"),
+  btnOpenSettings: document.getElementById("btn-open-settings"),
+  settingsModal: document.getElementById("settings-modal"),
+  btnCloseSettings: document.getElementById("btn-close-settings"),
+  settingsCurrentVersion: document.getElementById("settings-current-version"),
+  settingsUpdateStatus: document.getElementById("settings-update-status"),
+  settingsUpdateHint: document.getElementById("settings-update-hint"),
+  btnCheckUpdate: document.getElementById("btn-check-update"),
+  btnOpenReleases: document.getElementById("btn-open-releases"),
+  btnInstallUpdate: document.getElementById("btn-install-update"),
+  settingsLicenseInput: document.getElementById("settings-license-input"),
+  btnSettingsLicenseApply: document.getElementById("btn-settings-license-apply"),
   segPage: document.getElementById("seg-page"),
   comparePage: document.getElementById("compare-page"),
   sourceLabel: document.getElementById("source-label"),
   rangeHint: document.getElementById("range-hint"),
   modality: document.getElementById("modality"),
   task: document.getElementById("task"),
-  chkSpine: document.getElementById("chk-spine"),
-  chkFast: document.getElementById("chk-fast"),
-  chkDraw: document.getElementById("chk-draw"),
   erosionIters: document.getElementById("erosion-iters"),
   chkRange: document.getElementById("chk-range"),
   sliceStart: document.getElementById("slice-start"),
@@ -18,6 +26,9 @@
   progressLabel: document.getElementById("progress-label"),
   progressCase: document.getElementById("progress-case"),
   sessionLogPath: document.getElementById("session-log-path"),
+  progressLabelCard: document.getElementById("progress-label-card"),
+  progressCaseCard: document.getElementById("progress-case-card"),
+  sessionLogPathCard: document.getElementById("session-log-path-card"),
   progressBar: document.getElementById("progress-bar"),
   btnSelectSource: document.getElementById("btn-select-source"),
   btnSelectAll: document.getElementById("btn-select-all"),
@@ -34,15 +45,15 @@
   compareEmpty: document.getElementById("compare-empty"),
   logOutput: document.getElementById("log-output"),
   btnClearLogView: document.getElementById("btn-clear-log-view"),
-  btnToggleAutoscroll: document.getElementById("btn-toggle-autoscroll"),
   btnCopyLog: document.getElementById("btn-copy-log"),
-  btnCopyError: document.getElementById("btn-copy-error"),
   notice: document.getElementById("ui-notice"),
   diagnosticsList: document.getElementById("diagnostics-list"),
   licenseModal: document.getElementById("license-modal"),
+  btnLicenseOpenUrl: document.getElementById("btn-license-open-url"),
   licenseInput: document.getElementById("license-input"),
   btnLicenseCancel: document.getElementById("btn-license-cancel"),
   btnLicenseApply: document.getElementById("btn-license-apply"),
+  btnSettingsLicenseOpenUrl: document.getElementById("btn-settings-license-open-url"),
 };
 
 const state = {
@@ -55,6 +66,8 @@ const state = {
   autoScrollLog: true,
   running: false,
   lastErrorExcerpt: "",
+  updateStatus: null,
+  dismissedPendingAction: "",
 };
 
 async function copyText(text) {
@@ -80,12 +93,18 @@ function setTab(tab) {
 
   ui.tabSegBtn.classList.toggle("bg-brand", isSeg);
   ui.tabSegBtn.classList.toggle("text-white", isSeg);
+  ui.tabSegBtn.classList.toggle("border-[#335fc1]", isSeg);
   ui.tabSegBtn.classList.toggle("text-muted", !isSeg);
+  ui.tabSegBtn.classList.toggle("bg-white", !isSeg);
+  ui.tabSegBtn.classList.toggle("border-[#d7e0eb]", !isSeg);
   ui.tabSegBtn.classList.toggle("hover:bg-brandSoft", !isSeg);
 
   ui.tabCompareBtn.classList.toggle("bg-brand", !isSeg);
   ui.tabCompareBtn.classList.toggle("text-white", !isSeg);
+  ui.tabCompareBtn.classList.toggle("border-[#335fc1]", !isSeg);
   ui.tabCompareBtn.classList.toggle("text-muted", isSeg);
+  ui.tabCompareBtn.classList.toggle("bg-white", isSeg);
+  ui.tabCompareBtn.classList.toggle("border-[#d7e0eb]", isSeg);
   ui.tabCompareBtn.classList.toggle("hover:bg-brandSoft", isSeg);
 }
 
@@ -128,11 +147,64 @@ function statusBadge(status) {
   return `<span class="inline-flex rounded-full border px-2 py-1 text-xs font-semibold ${cls}">${safe}</span>`;
 }
 
+function renderUpdateStatus(status) {
+  state.updateStatus = status || null;
+  if (!ui.settingsCurrentVersion) return;
+
+  const current = status?.current_version || "unknown";
+  ui.settingsCurrentVersion.textContent = current;
+
+  if (!status) {
+    ui.settingsUpdateStatus.textContent = "尚未檢查更新";
+    ui.settingsUpdateHint.textContent = "";
+    ui.btnInstallUpdate.disabled = true;
+    return;
+  }
+
+  if (!status.ok) {
+    ui.settingsUpdateStatus.textContent = `目前版本：v${current}`;
+    ui.settingsUpdateHint.textContent = status.install_block_reason || "目前無法取得更新資訊。";
+    ui.btnInstallUpdate.disabled = true;
+    return;
+  }
+
+  const latest = status.latest_version ? `｜最新：v${status.latest_version}` : "";
+  ui.settingsUpdateStatus.textContent = `目前版本：v${current}${latest}`;
+
+  if (!status.install_supported) {
+    ui.settingsUpdateHint.textContent = status.install_block_reason || "目前環境不支援 GUI 更新。";
+    ui.btnInstallUpdate.disabled = true;
+    return;
+  }
+
+  if (status.update_available) {
+    ui.settingsUpdateHint.textContent = "偵測到較新正式版，可更新到最新 release。";
+    ui.btnInstallUpdate.disabled = false;
+  } else {
+    ui.settingsUpdateHint.textContent = "目前已是最新正式版。";
+    ui.btnInstallUpdate.disabled = true;
+  }
+}
+
+function localizeStatus(status) {
+  const raw = String(status || "");
+  if (raw === "Ready") return "就緒";
+  if (raw === "Success") return "完成";
+  if (raw === "Running") return "執行中";
+  if (raw === "Queued") return "排隊中";
+  if (raw === "Stopped") return "已停止";
+  if (raw === "Idle") return "待命中";
+  if (raw === "Unknown") return "未知";
+  if (raw.startsWith("Failed")) return raw.replace("Failed", "失敗");
+  if (raw.startsWith("RangeError")) return raw.replace("RangeError", "範圍錯誤");
+  return raw;
+}
+
 function renderTaskTable(tasks) {
   if (!tasks || tasks.length === 0) {
     ui.taskTableBody.innerHTML = `
       <tr>
-        <td colspan="3" class="px-4 py-10 text-center text-slate-500">No DICOM case found</td>
+        <td colspan="3" class="px-4 py-10 text-center text-slate-500">找不到 DICOM 病例</td>
       </tr>`;
     return;
   }
@@ -150,7 +222,7 @@ function renderTaskTable(tasks) {
           />
         </td>
         <td class="px-3 py-3 align-top text-slate-700">${t.label}</td>
-        <td class="px-3 py-3 align-top">${statusBadge(t.status)}</td>
+        <td class="px-3 py-3 align-top">${statusBadge(localizeStatus(t.status))}</td>
       </tr>`)
     .join("");
 
@@ -205,9 +277,6 @@ function setControlsDisabled(disabled) {
     ui.btnUnselectAll,
     ui.modality,
     ui.task,
-    ui.chkSpine,
-    ui.chkFast,
-    ui.chkDraw,
     ui.erosionIters,
     ui.chkRange,
     ui.sliceStart,
@@ -231,7 +300,7 @@ function renderCompareResult(res) {
   ui.compareResult.innerHTML = `
     <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <div class="rounded-lg border border-slate-200 bg-white px-3 py-2">
-        <div class="text-[11px] uppercase tracking-wide text-slate-500">Slice</div>
+        <div class="text-[11px] uppercase tracking-wide text-slate-500">切片</div>
         <div class="text-lg font-semibold text-slate-800">${res.slice_index_1based}</div>
       </div>
       <div class="rounded-lg border border-slate-200 bg-white px-3 py-2">
@@ -239,20 +308,20 @@ function renderCompareResult(res) {
         <div class="text-lg font-semibold text-slate-800">${res.dice.toFixed(4)}</div>
       </div>
       <div class="rounded-lg border border-slate-200 bg-white px-3 py-2">
-        <div class="text-[11px] uppercase tracking-wide text-slate-500">AI Area</div>
+        <div class="text-[11px] uppercase tracking-wide text-slate-500">AI 面積</div>
         <div class="text-base font-semibold text-slate-800">${res.ai_area_cm2.toFixed(2)} cm2</div>
       </div>
       <div class="rounded-lg border border-slate-200 bg-white px-3 py-2">
-        <div class="text-[11px] uppercase tracking-wide text-slate-500">Manual Area</div>
+        <div class="text-[11px] uppercase tracking-wide text-slate-500">人工面積</div>
         <div class="text-base font-semibold text-slate-800">${res.manual_area_cm2.toFixed(2)} cm2</div>
       </div>
     </div>
-    <div class="mt-3 text-sm font-semibold ${qualityCls}">Quality: ${res.quality}</div>`;
+    <div class="mt-3 text-sm font-semibold ${qualityCls}">品質：${res.quality}</div>`;
 }
 
 function renderDiagnostics(diag) {
   if (!diag || diag.length === 0) {
-    ui.diagnosticsList.innerHTML = '<p class="text-xs text-slate-500">No diagnostics.</p>';
+    ui.diagnosticsList.innerHTML = '<p class="text-xs text-slate-500">目前沒有診斷資訊。</p>';
     return;
   }
 
@@ -260,7 +329,7 @@ function renderDiagnostics(diag) {
     .map((x) => `
       <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
         <div class="text-xs text-slate-700">${x}</div>
-        <button class="diag-copy mt-2 cursor-pointer rounded border border-slate-300 px-2 py-1 text-[11px] text-slate-600 hover:bg-white" data-text="${x.replace(/"/g, "&quot;")}">Copy</button>
+        <button class="diag-copy mt-2 cursor-pointer rounded border border-slate-300 px-2 py-1 text-[11px] text-slate-600 hover:bg-white" data-text="${x.replace(/"/g, "&quot;")}">複製</button>
       </div>`)
     .join("");
 
@@ -268,7 +337,7 @@ function renderDiagnostics(diag) {
     btn.addEventListener("click", async (e) => {
       const text = e.target.dataset.text || "";
       await copyText(text);
-      showNotice("success", "Diagnostic copied");
+      showNotice("success", "已複製診斷資訊");
     });
   });
 }
@@ -279,13 +348,13 @@ function applyRangeHint(rangeHint, tasks) {
     if (n > 0) {
       ui.sliceStart.value = "1";
       ui.sliceEnd.value = String(n);
-      ui.rangeHint.textContent = `Single case detected. Slice range auto-filled: 1 to ${n}.`;
+      ui.rangeHint.textContent = `偵測到單一病例，已自動填入切片範圍：1 到 ${n}。`;
       return;
     }
   }
   if (rangeHint === "multi_auto_clamp") {
-    ui.rangeHint.textContent = "Multiple cases detected. Slice end will be clamped per case.";
-    ui.sliceEnd.placeholder = "auto clamp";
+    ui.rangeHint.textContent = "偵測到多個病例，結束切片會依各病例自動截斷。";
+    ui.sliceEnd.placeholder = "自動截斷";
     return;
   }
   ui.rangeHint.textContent = "";
@@ -296,10 +365,13 @@ function renderState(s) {
 
   state.running = !!s.running;
   state.lastErrorExcerpt = s.last_failed_excerpt || "";
+  if (!s.pending_action || s.pending_action !== state.dismissedPendingAction) {
+    state.dismissedPendingAction = "";
+  }
 
-  ui.sourceLabel.textContent = s.source_root || "No folder selected";
-  ui.compareAiLabel.textContent = s.compare_ai_mask || "No file selected";
-  ui.compareManualLabel.textContent = s.compare_manual_mask || "No file selected";
+  ui.sourceLabel.textContent = s.source_root || "尚未選擇資料夾";
+  ui.compareAiLabel.textContent = s.compare_ai_mask || "尚未選擇檔案";
+  ui.compareManualLabel.textContent = s.compare_manual_mask || "尚未選擇檔案";
 
   renderTaskTable(s.tasks || []);
   renderDiagnostics(s.diagnostics || []);
@@ -308,11 +380,18 @@ function renderState(s) {
   const done = s.progress?.done || 0;
   const total = s.progress?.total || 0;
   const percent = s.progress?.percent || 0;
-  ui.progressLabel.textContent = `Progress: ${done} / ${total}`;
-  ui.progressCase.textContent = s.running ? (s.progress.current_case || "Running") : "Idle";
+  ui.progressLabel.textContent = `進度：${done} / ${total}`;
+  ui.progressCase.textContent = s.running ? (s.progress.current_case || "執行中") : "待命中";
+  if (ui.progressLabelCard) ui.progressLabelCard.textContent = `${done} / ${total}`;
+  if (ui.progressCaseCard) ui.progressCaseCard.textContent = s.running
+    ? (s.progress.current_case || "執行中")
+    : "待命中";
   ui.progressBar.style.width = `${percent}%`;
 
-  ui.sessionLogPath.textContent = s.session_log_path ? `Session Log: ${s.session_log_path}` : "";
+  ui.sessionLogPath.textContent = s.session_log_path ? `批次記錄：${s.session_log_path}` : "";
+  if (ui.sessionLogPathCard) {
+    ui.sessionLogPathCard.textContent = s.session_log_path || "尚未開始";
+  }
 
   ui.btnStart.disabled = s.running;
   ui.btnStop.disabled = !s.running;
@@ -333,13 +412,17 @@ async function pollState() {
     applyLogEvents(res.log_events || []);
     renderState(res);
 
-    if (res.pending_action === "needs_license" && ui.licenseModal.classList.contains("hidden")) {
+    if (
+      res.pending_action === "needs_license" &&
+      state.dismissedPendingAction !== "needs_license" &&
+      ui.licenseModal.classList.contains("hidden")
+    ) {
       openLicenseModal();
-      showNotice("error", "License required. Please apply key to continue.");
+      showNotice("error", "需要授權，請先套用 key 後再繼續。");
     }
   } catch (err) {
     console.error(err);
-    showNotice("error", `Failed to poll state: ${err}`);
+    showNotice("error", `狀態更新失敗：${err}`);
   }
 }
 
@@ -347,9 +430,9 @@ async function startRun() {
   const payload = {
     modality: ui.modality.value,
     task: ui.task.value,
-    spine: ui.chkSpine.checked,
-    fast: ui.chkFast.checked,
-    auto_draw: ui.chkDraw.checked,
+    spine: true,
+    fast: false,
+    auto_draw: true,
     erosion_iters: Number(ui.erosionIters.value || 2),
     range_enabled: ui.chkRange.checked,
     slice_start: ui.sliceStart.value || "1",
@@ -357,10 +440,10 @@ async function startRun() {
   };
   const res = await window.pywebview.api.start_segmentation(payload);
   if (!res.ok) {
-    showNotice("error", res.message || "Failed to start segmentation");
+    showNotice("error", res.message || "啟動分割失敗");
     return;
   }
-  showNotice("success", "Batch started");
+  showNotice("success", "已開始批次執行");
 }
 
 async function runCompare() {
@@ -369,22 +452,17 @@ async function runCompare() {
   try {
     const res = await window.pywebview.api.run_compare_analysis();
     if (!res.ok) {
-      showNotice("error", res.message || "Compare failed");
+      showNotice("error", res.message || "比對失敗");
       return;
     }
     renderCompareResult(res);
-    showNotice("success", "Compare finished");
+    showNotice("success", "比對完成");
   } catch (err) {
-    showNotice("error", `Compare failed: ${err}`);
+    showNotice("error", `比對失敗：${err}`);
   } finally {
     ui.btnRunCompare.disabled = false;
     ui.btnRunCompare.classList.remove("opacity-60");
   }
-}
-
-function toggleAutoscroll() {
-  state.autoScrollLog = !state.autoScrollLog;
-  ui.btnToggleAutoscroll.textContent = `Autoscroll: ${state.autoScrollLog ? "On" : "Off"}`;
 }
 
 function openLicenseModal() {
@@ -397,61 +475,140 @@ function closeLicenseModal() {
   ui.licenseModal.classList.add("hidden");
 }
 
+function dismissLicenseModal() {
+  state.dismissedPendingAction = "needs_license";
+  closeLicenseModal();
+}
+
+function openSettingsModal() {
+  ui.settingsModal.classList.remove("hidden");
+  ui.settingsModal.classList.add("flex");
+}
+
+function closeSettingsModal() {
+  ui.settingsModal.classList.remove("flex");
+  ui.settingsModal.classList.add("hidden");
+}
+
+async function refreshUpdateStatus() {
+  ui.btnCheckUpdate.disabled = true;
+  try {
+    const status = await window.pywebview.api.get_update_status();
+    renderUpdateStatus(status);
+  } catch (err) {
+    renderUpdateStatus({
+      ok: false,
+      current_version: ui.settingsCurrentVersion?.textContent || "unknown",
+      install_supported: false,
+      install_block_reason: `檢查更新失敗：${err}`,
+    });
+  } finally {
+    ui.btnCheckUpdate.disabled = false;
+  }
+}
+
+async function installLatestReleaseUpdate() {
+  try {
+    const res = await window.pywebview.api.install_latest_release_update();
+    if (!res.ok) {
+      showNotice("info", res.message || "目前無法更新。");
+      return;
+    }
+    showNotice("success", res.message || "已啟動更新程序。");
+  } catch (err) {
+    showNotice("error", `更新失敗：${err}`);
+  }
+}
+
+async function openReleasesPage() {
+  try {
+    await window.pywebview.api.open_releases_page();
+  } catch (err) {
+    showNotice("error", `無法開啟 Releases：${err}`);
+  }
+}
+
+async function openLicenseApplyUrl() {
+  try {
+    await window.pywebview.api.open_license_apply_url();
+  } catch (err) {
+    showNotice("error", `無法開啟授權頁面：${err}`);
+  }
+}
+
 async function applyLicense() {
   const raw = ui.licenseInput.value || "";
   const res = await window.pywebview.api.submit_license(raw);
   if (!res.ok) {
-    showNotice("error", res.message || "Failed to apply license");
+    showNotice("error", res.message || "套用授權失敗");
     return;
   }
-  showNotice("success", `License applied: ${res.masked_key}`);
+  showNotice("success", `授權已套用：${res.masked_key}`);
+  state.dismissedPendingAction = "";
   closeLicenseModal();
   ui.licenseInput.value = "";
+  await pollState();
+}
+
+async function applyLicenseFromSettings() {
+  const raw = ui.settingsLicenseInput.value || "";
+  const res = await window.pywebview.api.submit_license(raw);
+  if (!res.ok) {
+    showNotice("error", res.message || "套用授權失敗");
+    return;
+  }
+  showNotice("success", `授權已套用：${res.masked_key}`);
+  state.dismissedPendingAction = "";
+  ui.settingsLicenseInput.value = "";
   await pollState();
 }
 
 async function retryFailedCase() {
   const res = await window.pywebview.api.retry_last_failed_case();
   if (!res.ok) {
-    showNotice("error", res.message || "No failed case to retry");
+    showNotice("error", res.message || "沒有可重試的失敗病例");
     return;
   }
-  showNotice("success", "Retry started");
+  showNotice("success", "已開始重試");
 }
 
 async function copyAllLog() {
   await copyText(state.logLines.join("\n"));
-  showNotice("success", "All logs copied");
-}
-
-async function copyErrorLog() {
-  const text = state.lastErrorExcerpt || "";
-  if (!text) {
-    showNotice("info", "No error excerpt yet");
-    return;
-  }
-  await copyText(text);
-  showNotice("success", "Error excerpt copied");
+  showNotice("success", "已複製全部記錄");
 }
 
 async function bootstrap() {
   const data = await window.pywebview.api.get_bootstrap();
   state.taskOptionsCT = data.task_options_ct || [];
   state.taskOptionsMRI = data.task_options_mri || [];
+  renderUpdateStatus(data.update_status || {
+    ok: true,
+    current_version: data.current_version || "unknown",
+    latest_version: null,
+    update_available: false,
+    install_supported: false,
+    install_block_reason: "",
+  });
   setTaskOptions(ui.modality.value);
   renderState(data.state);
 
   ui.tabSegBtn.addEventListener("click", () => setTab("seg"));
   ui.tabCompareBtn.addEventListener("click", () => setTab("compare"));
+  ui.btnOpenSettings.addEventListener("click", openSettingsModal);
+  ui.btnCloseSettings.addEventListener("click", closeSettingsModal);
+  ui.btnCheckUpdate.addEventListener("click", refreshUpdateStatus);
+  ui.btnOpenReleases.addEventListener("click", openReleasesPage);
+  ui.btnInstallUpdate.addEventListener("click", installLatestReleaseUpdate);
+  ui.btnSettingsLicenseApply.addEventListener("click", applyLicenseFromSettings);
 
   ui.modality.addEventListener("change", (e) => setTaskOptions(e.target.value));
 
   ui.btnSelectSource.addEventListener("click", async () => {
     const res = await window.pywebview.api.choose_source_folder();
     if (res && res.ok === false && res.message !== "Cancelled") {
-      showNotice("error", res.message || "Scan failed");
+      showNotice("error", res.message || "掃描失敗");
     } else if (res && res.ok) {
-      showNotice("success", `Scan completed: ${res.count} case(s)`);
+      showNotice("success", `掃描完成：${res.count} 個病例`);
     }
     await pollState();
   });
@@ -470,7 +627,7 @@ async function bootstrap() {
 
   ui.btnStop.addEventListener("click", async () => {
     await window.pywebview.api.stop_segmentation();
-    showNotice("info", "Stop requested");
+    showNotice("info", "已送出停止要求");
   });
 
   ui.btnRetryFailed.addEventListener("click", retryFailedCase);
@@ -493,14 +650,17 @@ async function bootstrap() {
     ui.logOutput.textContent = "";
   });
 
-  ui.btnToggleAutoscroll.addEventListener("click", toggleAutoscroll);
   ui.btnCopyLog.addEventListener("click", copyAllLog);
-  ui.btnCopyError.addEventListener("click", copyErrorLog);
 
-  ui.btnLicenseCancel.addEventListener("click", closeLicenseModal);
+  ui.btnLicenseOpenUrl.addEventListener("click", openLicenseApplyUrl);
+  ui.btnLicenseCancel.addEventListener("click", dismissLicenseModal);
   ui.btnLicenseApply.addEventListener("click", applyLicense);
+  ui.btnSettingsLicenseOpenUrl.addEventListener("click", openLicenseApplyUrl);
   ui.licenseModal.addEventListener("click", (e) => {
-    if (e.target === ui.licenseModal) closeLicenseModal();
+    if (e.target === ui.licenseModal) dismissLicenseModal();
+  });
+  ui.settingsModal.addEventListener("click", (e) => {
+    if (e.target === ui.settingsModal) closeSettingsModal();
   });
 
   if (state.pollingTimer) clearInterval(state.pollingTimer);
@@ -511,6 +671,6 @@ async function bootstrap() {
 window.addEventListener("pywebviewready", () => {
   bootstrap().catch((err) => {
     console.error(err);
-    showNotice("error", `UI bootstrap failed: ${err}`);
+    showNotice("error", `介面初始化失敗：${err}`);
   });
 });

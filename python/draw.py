@@ -1,12 +1,13 @@
 import argparse
+import colorsys
 import sys
 from collections import Counter
 from pathlib import Path
+
+import cv2
 import numpy as np
 import SimpleITK as sitk
 from PIL import Image, ImageDraw, ImageFont
-import colorsys
-import cv2
 
 
 def validate_path_ascii(path: Path):
@@ -387,8 +388,8 @@ def main():
     if not seg_output.exists():
         print(f"[ERROR] Mask folder not found: {seg_output}")
         print(f"   Expected path: {seg_output}")
-        print(f"\n   Possible reasons:")
-        print(f"   1. seg.py hasn't run yet or failed")
+        print("\n   Possible reasons:")
+        print("   1. seg.py hasn't run yet or failed")
         print(f"   2. Task name mismatch (current: {args.task})")
         print(
             f"   3. Fast mode mismatch (current: {'fast' if args.fast else 'normal'})"
@@ -409,7 +410,7 @@ def main():
             slice_end=args.slice_end,
         )
     except Exception as ex:
-        print(f"\n[FATAL ERROR] Unexpected error during drawing:")
+        print("\n[FATAL ERROR] Unexpected error during drawing:")
         print(f"   {type(ex).__name__}: {ex}")
         import traceback
 

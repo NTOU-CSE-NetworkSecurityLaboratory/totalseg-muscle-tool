@@ -1,5 +1,23 @@
 # Developer Changelog
 
+## v0.1.0 (2026-03-25)
+
+- CLI fixed-pipeline refactor landed as the new core structure:
+  - `seg.py` slimmed down into a thin CLI entrypoint
+  - fixed pipeline orchestration moved into `python/core/`
+  - output contract, request normalization, CSV service, and update/version helpers split into reusable modules
+- CSV slice ordering no longer relies on a hard-coded reverse step:
+  - spine evidence is now used to determine cranial/caudal direction
+  - parity against the baseline output case was re-verified for CSV and PNG outputs
+- PySide GUI was thinned into a controller-based shell:
+  - batch, log stream, license, update, queue UI, and compare logic moved out of the main window file
+  - settings now own version/update actions
+- WebView shell was revived as an active pilot UI:
+  - dashboard-style Chinese UI refresh
+  - settings modal includes version, release update, and license actions
+  - compare file dialog and license flow issues were fixed
+- Version source is now treated consistently from `python/pyproject.toml`, with GUI/CLI/WebView reading the same app version.
+
 ## v0.0.2 (2026-03-02)
 
 - GUI 文案統一為「比對分析」，比較頁面按鈕與訊息更新。
@@ -32,6 +50,16 @@
 1. 讓摘要 `mean_hu` 可選擇「依 range 重算」模式。
 2. CSV 加 metadata 區塊（range, erosion, modality, task）。
 3. 範圍模式新增「只輸出區間切片」選項，避免 0 值誤讀。
+
+## v0.0.4 (2026-03-23)
+
+- Added `docs/REFRACTOR_FIXED_PIPELINE_SPEC.md` to lock the next product direction:
+  - WebView removed from target architecture
+  - fixed main pipeline becomes `DICOM -> segmentation -> CSV -> PNG`
+  - spine / PNG treated as built-in workflow behavior
+  - fast mode moved out of the normal product path
+- Updated developer docs to point at the new fixed-pipeline direction.
+- Added repo quality baseline planning for `ruff`, `basedpyright`, and stable `pytest` discovery.
 
 ## v0.0.3 (2026-03-05)
 

@@ -8,20 +8,31 @@ import re
 import shutil
 import string
 import subprocess
+import tempfile
 import threading
+import webbrowser
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import webview
 
+from core.app_version import read_local_app_version
 from core.shared_core import (
     build_seg_command,
     compare_masks,
     filter_tasks_by_modality,
     folder_numeric_sort_key,
-    normalize_slice_range as normalize_slice_range_core,
     scan_dicom_cases,
+)
+from core.shared_core import (
+    normalize_slice_range as normalize_slice_range_core,
+)
+from core.update_service import (
+    build_update_status,
+    download_release_zip,
+    extract_release_payload,
+    spawn_release_update,
 )
 
 TASK_OPTIONS = [
@@ -88,6 +99,8 @@ class AppApi:
         self._batch_started_at: datetime | None = None
 
         self._python_dir = Path(__file__).resolve().parents[2]
+        self._app_root = self._python_dir.parent
+        self._latest_release = None
 
         self._diagnostics: list[str] = []
         self._pending_action = ""
@@ -192,6 +205,8 @@ class AppApi:
             "task_options": TASK_OPTIONS,
             "task_options_ct": filter_tasks_by_modality(TASK_OPTIONS, "CT"),
             "task_options_mri": filter_tasks_by_modality(TASK_OPTIONS, "MRI"),
+            "current_version": read_local_app_version(self._python_dir),
+            "update_status": self.get_update_status(),
             "state": self._state(),
         }
 
@@ -208,12 +223,12 @@ class AppApi:
 
     def _get_window(self):
         if not webview.windows:
-            raise RuntimeError("Window is not ready")
+            raise RuntimeError("視窗尚未就緒")
         return webview.windows[0]
 
     def choose_source_folder(self) -> dict[str, Any]:
         result = self._get_window().create_file_dialog(
-            webview.FOLDER_DIALOG, allow_multiple=False
+            webview.FileDialog.FOLDER, allow_multiple=False
         )
         if not result:
             return {"ok": False, "message": "Cancelled"}
@@ -221,9 +236,9 @@ class AppApi:
 
     def choose_compare_ai_file(self) -> dict[str, Any]:
         result = self._get_window().create_file_dialog(
-            webview.OPEN_DIALOG,
+            webview.FileDialog.OPEN,
             allow_multiple=False,
-            file_types=("NIfTI (*.nii;*.nii.gz)",),
+            file_types=("Medical (*.nii;*.nrrd;*.gz)",),
         )
         if not result:
             return {"ok": False, "message": "Cancelled"}
@@ -233,9 +248,9 @@ class AppApi:
 
     def choose_compare_manual_file(self) -> dict[str, Any]:
         result = self._get_window().create_file_dialog(
-            webview.OPEN_DIALOG,
+            webview.FileDialog.OPEN,
             allow_multiple=False,
-            file_types=("Medical (*.nii;*.nii.gz;*.nrrd)",),
+            file_types=("Medical (*.nii;*.nrrd;*.gz)",),
         )
         if not result:
             return {"ok": False, "message": "Cancelled"}
@@ -246,7 +261,7 @@ class AppApi:
     def scan_source(self, root_path: str) -> dict[str, Any]:
         root = Path(root_path)
         if not root.exists() or not root.is_dir():
-            return {"ok": False, "message": "Folder does not exist"}
+            return {"ok": False, "message": "資料夾不存在"}
 
         valid_cases = scan_dicom_cases(root)
         valid_cases.sort(key=lambda c: folder_numeric_sort_key(c.folder))
@@ -278,10 +293,10 @@ class AppApi:
                 self._range_hint = ""
 
         if tasks:
-            self._log(f"Scan completed: {len(tasks)} case(s) found")
+            self._log(f"掃描完成：找到 {len(tasks)} 個病例")
             return {"ok": True, "count": len(tasks), "state": self._state()}
-        self._log("No DICOM cases found")
-        return {"ok": False, "message": "No DICOM cases found", "state": self._state()}
+        self._log("找不到 DICOM 病例")
+        return {"ok": False, "message": "找不到 DICOM 病例", "state": self._state()}
 
     def set_task_selected(self, task_id: int, selected: bool) -> dict[str, Any]:
         with self._lock:
@@ -307,10 +322,64 @@ class AppApi:
                 "license_apply_url": LICENSE_APPLY_URL,
             }
 
+    def open_license_apply_url(self) -> dict[str, Any]:
+        webbrowser.open(LICENSE_APPLY_URL)
+        return {"ok": True, "url": LICENSE_APPLY_URL}
+
+    def get_update_status(self) -> dict[str, Any]:
+        try:
+            status = build_update_status(app_root=self._app_root, python_base_dir=self._python_dir)
+            self._latest_release = status.release
+            return {
+                "ok": True,
+                "current_version": status.current_version,
+                "latest_version": status.latest_version,
+                "update_available": status.update_available,
+                "install_supported": status.install_supported,
+                "install_block_reason": status.install_block_reason,
+                "release_page_url": status.release_page_url,
+            }
+        except Exception as exc:
+            return {
+                "ok": False,
+                "current_version": read_local_app_version(self._python_dir),
+                "latest_version": None,
+                "update_available": False,
+                "install_supported": False,
+                "install_block_reason": str(exc),
+                "release_page_url": "https://github.com/proadress/totalseg-muscle-tool/releases",
+            }
+
+    def open_releases_page(self) -> dict[str, Any]:
+        status = self.get_update_status()
+        target_url = str(status.get("release_page_url") or "https://github.com/proadress/totalseg-muscle-tool/releases")
+        webbrowser.open(target_url)
+        return {"ok": True, "url": target_url}
+
+    def install_latest_release_update(self) -> dict[str, Any]:
+        status = build_update_status(app_root=self._app_root, python_base_dir=self._python_dir)
+        if status.release is None:
+            return {"ok": False, "message": "目前無法取得最新 release 資訊。"}
+        if not status.install_supported:
+            return {"ok": False, "message": status.install_block_reason or "目前環境不支援 GUI 更新。"}
+        if not status.update_available:
+            return {"ok": False, "message": "目前已是最新正式版。"}
+
+        work_dir = Path(tempfile.mkdtemp(prefix="totalseg_release_webview_"))
+        zip_path = download_release_zip(status.release, work_dir / f"{status.release.tag_name}.zip")
+        payload_root = extract_release_payload(zip_path, work_dir / "extract")
+        spawn_release_update(
+            app_root=self._app_root,
+            payload_root=payload_root,
+            current_pid=os.getpid(),
+            launcher_path=self._app_root / "START 啟動.bat",
+        )
+        return {"ok": True, "message": "已啟動更新程序。關閉主視窗後會套用最新正式版。"}
+
     def submit_license(self, raw_input: str) -> dict[str, Any]:
         key = self._parse_license_input(raw_input)
         if not key:
-            return {"ok": False, "message": "Please enter a valid license key or command"}
+            return {"ok": False, "message": "請輸入有效的授權金鑰或指令"}
 
         ok, message = self._apply_totalseg_license(key)
         if not ok:
@@ -321,20 +390,20 @@ class AppApi:
             self._license_needed = False
             if self._pending_action == "needs_license":
                 self._pending_action = ""
-        self._log(f"License updated: {self._mask_license_key(key)}")
+        self._log(f"授權已更新：{self._mask_license_key(key)}")
         self._session_log_write("LICENSE_UPDATED")
-        return {"ok": True, "masked_key": self._mask_license_key(key), "message": "License applied"}
+        return {"ok": True, "masked_key": self._mask_license_key(key), "message": "授權已套用"}
 
     def retry_last_failed_case(self) -> dict[str, Any]:
         with self._lock:
             if self._running:
-                return {"ok": False, "message": "Batch is already running"}
+                return {"ok": False, "message": "批次已在執行中"}
             snapshot = dict(self._last_failed_task_config or {})
             task_id = self._last_failed_task_id
             if not snapshot:
-                return {"ok": False, "message": "No failed case to retry"}
+                return {"ok": False, "message": "沒有可重試的失敗病例"}
 
-        self._log("Retrying the last failed case...")
+        self._log("開始重試上一個失敗病例...")
         self._worker = threading.Thread(
             target=self._run_batch,
             args=([snapshot], dict(snapshot.get("run_config", {})), True),
@@ -350,15 +419,15 @@ class AppApi:
         if task_id is not None:
             self._set_task_status_by_id(task_id, "Queued")
         self._worker.start()
-        return {"ok": True, "message": "Retry started"}
+        return {"ok": True, "message": "已開始重試"}
 
     def start_segmentation(self, config: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
             if self._running:
-                return {"ok": False, "message": "A batch is already running"}
+                return {"ok": False, "message": "批次已在執行中"}
             selected_tasks = [dict(t) for t in self._tasks if bool(t.get("selected"))]
             if not selected_tasks:
-                return {"ok": False, "message": "No selected cases"}
+                return {"ok": False, "message": "尚未選擇病例"}
             self._running = True
             self._stop_requested = False
             self._progress_total = len(selected_tasks)
@@ -382,13 +451,13 @@ class AppApi:
         if not preflight_ok:
             with self._lock:
                 self._running = False
-            return {"ok": False, "message": "Failed to prepare TotalSegmentator config"}
+            return {"ok": False, "message": "準備 TotalSegmentator 設定失敗"}
 
         self._start_session_log()
         self._session_log_write(
             f"BATCH_START | selected={len(selected_tasks)} | source={self._source_root}"
         )
-        self._log("Batch started")
+        self._log("批次開始")
 
         run_config = dict(config or {})
         self._worker = threading.Thread(
@@ -400,7 +469,7 @@ class AppApi:
     def stop_segmentation(self) -> dict[str, Any]:
         with self._lock:
             if not self._running:
-                return {"ok": True, "message": "No running batch"}
+                return {"ok": True, "message": "目前沒有執行中的批次"}
             self._stop_requested = True
             proc = self._proc
         if proc and proc.poll() is None:
@@ -408,7 +477,7 @@ class AppApi:
                 proc.kill()
             except Exception:
                 pass
-        self._log("Stop requested")
+        self._log("已送出停止要求")
         return {"ok": True}
 
     def shutdown(self) -> dict[str, Any]:
@@ -496,27 +565,27 @@ class AppApi:
     def _diagnostic_messages_for_issue(self, issue: str) -> list[str]:
         mapping = {
             "license_missing_or_invalid": [
-                "This task requires a valid TotalSegmentator license key.",
-                "Open License modal, apply key, then retry failed case.",
+                "此任務需要有效的 TotalSegmentator 授權金鑰。",
+                "請先套用授權，再重試失敗病例。",
             ],
             "totalseg_config_json_broken": [
-                "Detected broken ~/.totalsegmentator/config.json.",
-                "Config was rebuilt automatically; retry should work.",
+                "偵測到損壞的 ~/.totalsegmentator/config.json。",
+                "設定已自動重建，可重新嘗試。",
             ],
             "cuda_out_of_memory": [
-                "GPU memory is insufficient.",
-                "Close other GPU apps or use Fast mode / smaller batch.",
+                "GPU 記憶體不足。",
+                "請關閉其他 GPU 程式，或縮小執行範圍後再試。",
             ],
             "permission_denied": [
-                "Permission denied while accessing files.",
-                "Run app with sufficient folder permissions.",
+                "存取檔案時遭到權限拒絕。",
+                "請確認資料夾權限後再試。",
             ],
             "module_not_found": [
-                "Python dependency missing in current environment.",
-                "Run uv sync and retry.",
+                "目前環境缺少 Python 相依套件。",
+                "請先安裝完整環境後再試。",
             ],
         }
-        return mapping.get(issue, ["No specific diagnosis available."])
+        return mapping.get(issue, ["目前沒有可提供的診斷資訊。"])
 
     def _run_batch(
         self,
@@ -526,7 +595,7 @@ class AppApi:
     ) -> None:
         uv_path = shutil.which("uv")
         if not uv_path:
-            self._log("ERROR: uv not found in PATH")
+            self._log("錯誤：PATH 中找不到 uv")
             with self._lock:
                 self._running = False
             return
@@ -544,7 +613,7 @@ class AppApi:
             dicom_path = str(task["path"])
             out_path = str(Path(dicom_path).parent)
             self._set_task_status_by_id(task_id, "Running")
-            self._log(f"Running case: {task['label']}")
+            self._log(f"執行病例：{task['label']}")
             self._session_log_write(
                 f"CASE_START | id={task_id} | label={task['label']} | path={dicom_path}"
             )
@@ -559,7 +628,7 @@ class AppApi:
                 )
                 if err:
                     self._set_task_status_by_id(task_id, f"RangeError: {err}")
-                    self._log(f"ERROR {task['label']}: {err}")
+                    self._log(f"錯誤 {task['label']}：{err}")
                     self._session_log_write(
                         f"CASE_END | id={task_id} | status=range_error | reason={err}"
                     )
@@ -569,7 +638,7 @@ class AppApi:
                 slice_start = start_val
                 slice_end = end_val
                 self._log(
-                    f"Applied slice range for {task['label']}: {slice_start} to "
+                    f"已套用切片範圍 {task['label']}：{slice_start} 到 "
                     f"{slice_end if slice_end is not None else 'auto'}"
                 )
 
@@ -606,7 +675,7 @@ class AppApi:
 
                 if code == 0 and not self._stop_requested:
                     self._set_task_status_by_id(task_id, "Success")
-                    self._log(f"Done: {task['label']}")
+                    self._log(f"完成：{task['label']}")
                     self._session_log_write(
                         f"CASE_END | id={task_id} | status=success | exit_code={code}"
                     )
@@ -619,14 +688,14 @@ class AppApi:
                 else:
                     issue = self._classify_error(excerpt)
                     self._set_task_status_by_id(task_id, f"Failed (code {code})")
-                    self._log(f"ERROR {task['label']}: process exit code {code}")
+                    self._log(f"錯誤 {task['label']}：程序結束碼 {code}")
                     self._session_log_write(
                         f"CASE_END | id={task_id} | status=failed | exit_code={code} | issue={issue}"
                     )
 
                     diagnostics = self._diagnostic_messages_for_issue(issue)
                     for d in diagnostics:
-                        self._log(f"DIAG: {d}")
+                        self._log(f"診斷：{d}")
 
                     with self._lock:
                         self._diagnostics = diagnostics
@@ -641,19 +710,19 @@ class AppApi:
                             self._log(repair_msg)
                             self._session_log_write(repair_msg)
                         if not ok:
-                            self._log("ERROR: failed to auto-repair TotalSegmentator config")
+                            self._log("錯誤：自動修復 TotalSegmentator 設定失敗")
 
                     if issue == "license_missing_or_invalid":
                         with self._lock:
                             self._license_needed = True
                             self._pending_action = "needs_license"
-                        self._log("License is required. Apply key and retry failed case.")
+                        self._log("需要授權。請先套用 key，再重試失敗病例。")
                         stop_reason = "needs_license"
                         with self._lock:
                             self._stop_requested = True
             except Exception as exc:
                 self._set_task_status_by_id(task_id, "Failed")
-                self._log(f"ERROR {task['label']}: {exc}")
+                self._log(f"錯誤 {task['label']}：{exc}")
                 self._session_log_write(f"CASE_END | id={task_id} | status=failed | error={exc}")
             finally:
                 with self._lock:
@@ -676,13 +745,13 @@ class AppApi:
         self._session_log_write(f"BATCH_END | status={stop_reason} | done={done} | total={total}")
 
         if stop_reason == "needs_license":
-            self._log("Batch paused due to license issue")
+            self._log("批次因授權問題暫停")
         elif stop_reason == "stopped":
-            self._log("Batch stopped")
+            self._log("批次已停止")
         elif is_retry:
-            self._log("Retry finished")
+            self._log("重試完成")
         else:
-            self._log("Batch finished")
+            self._log("批次完成")
 
     def _parse_license_input(self, raw_text: str) -> str:
         text = (raw_text or "").strip()
@@ -706,7 +775,7 @@ class AppApi:
 
     def _apply_totalseg_license(self, license_key: str) -> tuple[bool, str]:
         if shutil.which("uv") is None:
-            return False, "uv not found in PATH"
+            return False, "PATH 中找不到 uv"
 
         script = (
             "import os; "
@@ -733,7 +802,7 @@ class AppApi:
         except subprocess.CalledProcessError as exc:
             stderr = (exc.stderr or "").strip()
             stdout = (exc.stdout or "").strip()
-            return False, (stderr or stdout or "License apply failed")
+            return False, (stderr or stdout or "授權套用失敗")
 
     def _totalseg_config_path(self) -> Path:
         return Path.home() / ".totalsegmentator" / "config.json"
@@ -751,7 +820,7 @@ class AppApi:
             return True, message
         if ok:
             return True, ""
-        return False, message or "Unable to validate TotalSegmentator config"
+        return False, message or "無法驗證 TotalSegmentator 設定"
 
     def _repair_totalseg_config_if_broken(self) -> tuple[bool, str]:
         cfg_path = self._totalseg_config_path()
@@ -759,7 +828,7 @@ class AppApi:
 
         if not cfg_path.exists():
             cfg_path.write_text(json.dumps(self._build_default_totalseg_config(), indent=4), encoding="utf-8")
-            return True, f"Created TotalSegmentator config: {cfg_path}"
+            return True, f"已建立 TotalSegmentator 設定：{cfg_path}"
 
         try:
             json.loads(cfg_path.read_text(encoding="utf-8"))
@@ -772,7 +841,7 @@ class AppApi:
             except Exception:
                 pass
             cfg_path.write_text(json.dumps(self._build_default_totalseg_config(), indent=4), encoding="utf-8")
-            return True, f"Rebuilt broken TotalSegmentator config. Backup: {backup}"
+            return True, f"已重建損壞的 TotalSegmentator 設定，備份：{backup}"
 
     def run_compare_analysis(self) -> dict[str, Any]:
         with self._lock:

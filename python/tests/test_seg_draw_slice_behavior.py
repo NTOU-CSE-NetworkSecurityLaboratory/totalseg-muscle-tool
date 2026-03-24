@@ -33,6 +33,11 @@ def _make_image(arr, spacing=(10.0, 10.0, 5.0)):
     return image
 
 
+def _touch(path: Path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"")
+
+
 @contextmanager
 def _sandbox():
     root = Path(__file__).resolve().parent / "_tmp"
@@ -52,7 +57,23 @@ def test_export_areas_to_csv_preserves_slice_order(monkeypatch):
         mask_arr[0, 0, 0] = 1
         mask_arr[2, :, :] = 1
         mask_image = _make_image(mask_arr)
+        cranial_spine = np.zeros((3, 2, 2), dtype=np.uint8)
+        cranial_spine[0, 0, 0] = 1
+        caudal_spine = np.zeros((3, 2, 2), dtype=np.uint8)
+        caudal_spine[2, 0, 0] = 1
         fake_files = [tmp_path / "001.dcm", tmp_path / "002.dcm", tmp_path / "003.dcm"]
+        _touch(tmp_path / "segmentation_spine_fast" / "vertebrae_C3.nii.gz")
+        _touch(tmp_path / "segmentation_spine_fast" / "vertebrae_L2.nii.gz")
+
+        def fake_read_image(path):
+            name = Path(path).name
+            if name == "muscle.nii.gz":
+                return mask_image
+            if name == "vertebrae_C3.nii.gz":
+                return _make_image(cranial_spine)
+            if name == "vertebrae_L2.nii.gz":
+                return _make_image(caudal_spine)
+            raise AssertionError(f"Unexpected image path: {path}")
 
         monkeypatch.setattr(
             seg.sitk,
@@ -60,7 +81,7 @@ def test_export_areas_to_csv_preserves_slice_order(monkeypatch):
             lambda: _FakeSeriesReader(fake_files, ct_image),
         )
         monkeypatch.setattr(seg.os, "listdir", lambda _mask_dir: ["muscle.nii.gz"])
-        monkeypatch.setattr(seg, "read_image_with_ascii_fallback", lambda _path: mask_image)
+        monkeypatch.setattr(seg, "read_image_with_ascii_fallback", fake_read_image)
 
         output_csv = tmp_path / "mask.csv"
         seg.export_areas_and_volumes_to_csv(
@@ -76,6 +97,56 @@ def test_export_areas_to_csv_preserves_slice_order(monkeypatch):
         assert rows[1] == ["1", "1.00"]
         assert rows[2] == ["2", "0.00"]
         assert rows[3] == ["3", "4.00"]
+
+
+def test_export_areas_to_csv_uses_spine_to_fix_reversed_order(monkeypatch):
+    with _sandbox() as tmp_path:
+        ct_arr = np.zeros((3, 2, 2), dtype=np.int16)
+        ct_image = _make_image(ct_arr)
+        mask_arr = np.zeros((3, 2, 2), dtype=np.uint8)
+        mask_arr[0, 0, 0] = 1
+        mask_arr[2, :, :] = 1
+        mask_image = _make_image(mask_arr)
+        cranial_spine = np.zeros((3, 2, 2), dtype=np.uint8)
+        cranial_spine[2, 0, 0] = 1
+        caudal_spine = np.zeros((3, 2, 2), dtype=np.uint8)
+        caudal_spine[0, 0, 0] = 1
+        fake_files = [tmp_path / "003.dcm", tmp_path / "002.dcm", tmp_path / "001.dcm"]
+        _touch(tmp_path / "segmentation_spine_fast" / "vertebrae_C3.nii.gz")
+        _touch(tmp_path / "segmentation_spine_fast" / "vertebrae_L2.nii.gz")
+
+        def fake_read_image(path):
+            name = Path(path).name
+            if name == "muscle.nii.gz":
+                return mask_image
+            if name == "vertebrae_C3.nii.gz":
+                return _make_image(cranial_spine)
+            if name == "vertebrae_L2.nii.gz":
+                return _make_image(caudal_spine)
+            raise AssertionError(f"Unexpected image path: {path}")
+
+        monkeypatch.setattr(
+            seg.sitk,
+            "ImageSeriesReader",
+            lambda: _FakeSeriesReader(fake_files, ct_image),
+        )
+        monkeypatch.setattr(seg.os, "listdir", lambda _mask_dir: ["muscle.nii.gz"])
+        monkeypatch.setattr(seg, "read_image_with_ascii_fallback", fake_read_image)
+
+        output_csv = tmp_path / "mask.csv"
+        seg.export_areas_and_volumes_to_csv(
+            str(tmp_path / "masks"),
+            str(output_csv),
+            str(tmp_path / "dicom"),
+        )
+
+        with output_csv.open(newline="") as f:
+            rows = list(csv.reader(f))
+
+        assert rows[0] == ["slicenumber", "muscle"]
+        assert rows[1] == ["1", "4.00"]
+        assert rows[2] == ["2", "0.00"]
+        assert rows[3] == ["3", "1.00"]
 
 
 def test_dicom_to_overlay_png_avoids_filename_collisions(monkeypatch):

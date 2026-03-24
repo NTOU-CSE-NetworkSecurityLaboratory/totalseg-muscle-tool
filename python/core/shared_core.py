@@ -132,6 +132,11 @@ def build_seg_command(
     slice_start: int | None = None,
     slice_end: int | None = None,
 ) -> list[str]:
+    # Fixed pipeline contract:
+    # - spine is always enabled
+    # - PNG generation is always enabled
+    # - fast mode is removed from the normal path
+    _ = (spine, fast, auto_draw)
     cmd = [
         "run",
         "--no-sync",
@@ -147,11 +152,11 @@ def build_seg_command(
         "--modality",
         str(modality),
         "--spine",
-        "1" if spine else "0",
+        "1",
         "--fast",
-        "1" if fast else "0",
+        "0",
         "--auto_draw",
-        "1" if auto_draw else "0",
+        "1",
         "--erosion_iters",
         str(erosion_iters),
     ]
