@@ -356,6 +356,18 @@ class AppApi:
         webbrowser.open(target_url)
         return {"ok": True, "url": target_url}
 
+    def close_for_update(self) -> dict[str, Any]:
+        def _close_window() -> None:
+            try:
+                self._get_window().destroy()
+            except Exception:
+                pass
+
+        timer = threading.Timer(0.15, _close_window)
+        timer.daemon = True
+        timer.start()
+        return {"ok": True}
+
     def install_latest_release_update(self) -> dict[str, Any]:
         status = build_update_status(app_root=self._app_root, python_base_dir=self._python_dir)
         if status.release is None:
@@ -377,9 +389,10 @@ class AppApi:
         return {
             "ok": True,
             "message": (
-                "已啟動更新程序。關閉主視窗後會套用最新正式版。"
+                "已啟動更新程序，主視窗即將自動關閉並套用最新正式版。"
                 f" 更新記錄：{log_path}"
             ),
+            "close_window": True,
         }
 
     def submit_license(self, raw_input: str) -> dict[str, Any]:

@@ -515,6 +515,16 @@ async function installLatestReleaseUpdate() {
       return;
     }
     showNotice("success", res.message || "已啟動更新程序。");
+    if (res.close_window) {
+      window.setTimeout(async () => {
+        try {
+          await window.pywebview.api.close_for_update();
+        } catch (err) {
+          console.error(err);
+          showNotice("error", `自動關閉視窗失敗：${err}`);
+        }
+      }, 900);
+    }
   } catch (err) {
     showNotice("error", `更新失敗：${err}`);
   }
