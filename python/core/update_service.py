@@ -14,9 +14,9 @@ from urllib.request import urlopen
 
 from core.app_version import read_local_app_version
 
-RELEASES_PAGE_URL = "https://github.com/proadress/totalseg-muscle-tool/releases"
+RELEASES_PAGE_URL = "https://github.com/NTOU-CSE-NetworkSecurityLaboratory/totalseg-muscle-tool/releases"
 LATEST_RELEASE_API_URL = (
-    "https://api.github.com/repos/proadress/totalseg-muscle-tool/releases/latest"
+    "https://api.github.com/repos/NTOU-CSE-NetworkSecurityLaboratory/totalseg-muscle-tool/releases/latest"
 )
 _UPDATE_RUNNER_NAME = "totalseg_release_updater.py"
 _SKIP_NAMES = {

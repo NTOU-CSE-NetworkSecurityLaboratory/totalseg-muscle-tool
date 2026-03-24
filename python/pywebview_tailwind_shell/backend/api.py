@@ -347,12 +347,12 @@ class AppApi:
                 "update_available": False,
                 "install_supported": False,
                 "install_block_reason": str(exc),
-                "release_page_url": "https://github.com/proadress/totalseg-muscle-tool/releases",
+                "release_page_url": "https://github.com/NTOU-CSE-NetworkSecurityLaboratory/totalseg-muscle-tool/releases",
             }
 
     def open_releases_page(self) -> dict[str, Any]:
         status = self.get_update_status()
-        target_url = str(status.get("release_page_url") or "https://github.com/proadress/totalseg-muscle-tool/releases")
+        target_url = str(status.get("release_page_url") or "https://github.com/NTOU-CSE-NetworkSecurityLaboratory/totalseg-muscle-tool/releases")
         webbrowser.open(target_url)
         return {"ok": True, "url": target_url}
 

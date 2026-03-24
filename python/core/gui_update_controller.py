@@ -62,7 +62,7 @@ class GuiUpdateController:
             self.window.btn_check_update.setEnabled(True)
 
     def open_releases_page(self) -> None:
-        target_url = "https://github.com/proadress/totalseg-muscle-tool/releases"
+        target_url = "https://github.com/NTOU-CSE-NetworkSecurityLaboratory/totalseg-muscle-tool/releases"
         if self.window.update_status is not None:
             target_url = self.window.update_status.release_page_url
         webbrowser.open(target_url)
