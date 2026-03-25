@@ -19,7 +19,8 @@ import webview
 
 from core.app_version import read_local_app_version
 from core.shared_core import (
-    build_seg_command,
+    build_step1_command,
+    build_step2_command,
     compare_masks,
     filter_tasks_by_modality,
     folder_numeric_sort_key,
@@ -513,6 +514,33 @@ class AppApi:
             self._current_case = ""
         return {"ok": True}
 
+    def get_current_license(self) -> dict[str, Any]:
+        cfg_path = self._totalseg_config_path()
+        try:
+            cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+            key = cfg.get("license_number") or cfg.get("license") or cfg.get("aca_license") or ""
+            if key:
+                return {"ok": True, "masked_key": self._mask_license_key(str(key)), "has_license": True}
+            return {"ok": True, "masked_key": "", "has_license": False}
+        except Exception:
+            return {"ok": True, "masked_key": "", "has_license": False}
+
+    def open_source_folder(self) -> dict[str, Any]:
+        import subprocess, sys
+        path = self._source_root
+        if not path:
+            return {"ok": False, "message": "尚未選擇資料夾"}
+        try:
+            if sys.platform == "win32":
+                os.startfile(path)
+            elif sys.platform == "darwin":
+                subprocess.run(["open", path], check=False)
+            else:
+                subprocess.run(["xdg-open", path], check=False)
+            return {"ok": True}
+        except Exception as exc:
+            return {"ok": False, "message": str(exc)}
+
     def _set_task_status_by_id(self, task_id: int, status: str) -> None:
         with self._lock:
             for t in self._tasks:
@@ -606,6 +634,75 @@ class AppApi:
         }
         return mapping.get(issue, ["目前沒有可提供的診斷資訊。"])
 
+    def _run_proc(self, cmd: list[str]) -> tuple[int, str]:
+        """Start a subprocess, consume its output, return (exit_code, excerpt)."""
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                cwd=str(self._python_dir),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+            )
+            with self._lock:
+                self._proc = proc
+            excerpt = self._consume_process_output(proc)
+            if self._stop_requested and proc.poll() is None:
+                proc.kill()
+            code = proc.wait()
+            return code, excerpt
+        except Exception as exc:
+            self._log(f"錯誤：{exc}")
+            return -1, str(exc)
+        finally:
+            with self._lock:
+                self._proc = None
+
+    def _handle_step_failure(
+        self,
+        task: dict[str, Any],
+        task_id: int,
+        task_snapshot: dict[str, Any],
+        excerpt: str,
+        step: str,
+        code: int,
+    ) -> str:
+        """Record a step failure, return stop_reason ('needs_license' or 'failed')."""
+        issue = self._classify_error(excerpt)
+        self._set_task_status_by_id(task_id, f"Failed step {step} (code {code})")
+        self._log(f"錯誤 {task['label']}：步驟 {step} 結束碼 {code}")
+        self._session_log_write(
+            f"CASE_END | id={task_id} | status=failed | step={step} | exit_code={code} | issue={issue}"
+        )
+
+        diagnostics = self._diagnostic_messages_for_issue(issue)
+        for d in diagnostics:
+            self._log(f"診斷：{d}")
+
+        with self._lock:
+            self._diagnostics = diagnostics
+            self._last_failed_excerpt = excerpt[-6000:] if excerpt else ""
+            self._last_failed_reason = f"issue={issue}, step={step}, exit_code={code}"
+            self._last_failed_task_id = task_id
+            self._last_failed_task_config = task_snapshot
+
+        if issue == "totalseg_config_json_broken":
+            ok, repair_msg = self._repair_totalseg_config_if_broken()
+            if repair_msg:
+                self._log(repair_msg)
+                self._session_log_write(repair_msg)
+            if not ok:
+                self._log("錯誤：自動修復 TotalSegmentator 設定失敗")
+
+        if issue == "license_missing_or_invalid":
+            with self._lock:
+                self._license_needed = True
+                self._pending_action = "needs_license"
+                self._stop_requested = True
+            self._log("需要授權。請先套用 key，再重試失敗病例。")
+            return "needs_license"
+
+        return "failed"
+
     def _run_batch(
         self,
         selected_tasks: list[dict[str, Any]],
@@ -661,97 +758,108 @@ class AppApi:
                     f"{slice_end if slice_end is not None else 'auto'}"
                 )
 
-            args = build_seg_command(
-                dicom_path=dicom_path,
-                out_path=out_path,
-                task=str(config.get("task", "total")),
-                modality=str(config.get("modality", "CT")),
-                spine=bool(config.get("spine", True)),
-                fast=bool(config.get("fast", False)),
-                auto_draw=bool(config.get("auto_draw", True)),
-                erosion_iters=config.get("erosion_iters", 2),
-                slice_start=slice_start,
-                slice_end=slice_end,
-            )
-
             task_snapshot = dict(task)
             task_snapshot["run_config"] = dict(config)
 
-            try:
-                proc = subprocess.Popen(
-                    [uv_path, *args],
-                    cwd=str(self._python_dir),
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
+            task_name = str(config.get("task", "total"))
+            modality = str(config.get("modality", "CT"))
+            erosion_iters = int(config.get("erosion_iters", 2))
+            hu_min_raw = config.get("hu_min") or None
+            hu_max_raw = config.get("hu_max") or None
+            hu_min = float(hu_min_raw) if hu_min_raw is not None else None
+            hu_max = float(hu_max_raw) if hu_max_raw is not None else None
+            run_mode = str(config.get("mode", "full"))
+
+            if run_mode != "export_only":
+                # --- 步驟一：分割 ---
+                self._log(f"步驟一：分割 {task['label']}")
+                step1_args = build_step1_command(
+                    dicom_path=dicom_path,
+                    out_path=out_path,
+                    task=task_name,
+                    modality=modality,
                 )
-                with self._lock:
-                    self._proc = proc
+                step1_code, step1_excerpt = self._run_proc([uv_path, *step1_args])
 
-                excerpt = self._consume_process_output(proc)
-                if self._stop_requested and proc.poll() is None:
-                    proc.kill()
-                code = proc.wait()
-
-                if code == 0 and not self._stop_requested:
-                    self._set_task_status_by_id(task_id, "Success")
-                    self._log(f"完成：{task['label']}")
-                    self._session_log_write(
-                        f"CASE_END | id={task_id} | status=success | exit_code={code}"
-                    )
-                elif self._stop_requested:
+                if self._stop_requested:
                     self._set_task_status_by_id(task_id, "Stopped")
                     self._session_log_write(
-                        f"CASE_END | id={task_id} | status=stopped | exit_code={code}"
+                        f"CASE_END | id={task_id} | status=stopped | step=1"
                     )
-                    stop_reason = "stopped"
-                else:
-                    issue = self._classify_error(excerpt)
-                    self._set_task_status_by_id(task_id, f"Failed (code {code})")
-                    self._log(f"錯誤 {task['label']}：程序結束碼 {code}")
-                    self._session_log_write(
-                        f"CASE_END | id={task_id} | status=failed | exit_code={code} | issue={issue}"
-                    )
-
-                    diagnostics = self._diagnostic_messages_for_issue(issue)
-                    for d in diagnostics:
-                        self._log(f"診斷：{d}")
-
                     with self._lock:
-                        self._diagnostics = diagnostics
-                        self._last_failed_excerpt = excerpt[-6000:] if excerpt else ""
-                        self._last_failed_reason = f"issue={issue}, exit_code={code}"
-                        self._last_failed_task_id = task_id
-                        self._last_failed_task_config = task_snapshot
-
-                    if issue == "totalseg_config_json_broken":
-                        ok, repair_msg = self._repair_totalseg_config_if_broken()
-                        if repair_msg:
-                            self._log(repair_msg)
-                            self._session_log_write(repair_msg)
-                        if not ok:
-                            self._log("錯誤：自動修復 TotalSegmentator 設定失敗")
-
-                    if issue == "license_missing_or_invalid":
-                        with self._lock:
-                            self._license_needed = True
-                            self._pending_action = "needs_license"
-                        self._log("需要授權。請先套用 key，再重試失敗病例。")
-                        stop_reason = "needs_license"
-                        with self._lock:
-                            self._stop_requested = True
-            except Exception as exc:
-                self._set_task_status_by_id(task_id, "Failed")
-                self._log(f"錯誤 {task['label']}：{exc}")
-                self._session_log_write(f"CASE_END | id={task_id} | status=failed | error={exc}")
-            finally:
-                with self._lock:
-                    self._proc = None
-                    self._progress_done += 1
-
-            with self._lock:
-                if self._stop_requested and stop_reason != "needs_license":
+                        self._progress_done += 1
                     stop_reason = "stopped"
                     break
+
+                if step1_code != 0:
+                    step_stop = self._handle_step_failure(
+                        task, task_id, task_snapshot, step1_excerpt, "1", step1_code
+                    )
+                    with self._lock:
+                        self._progress_done += 1
+                    if step_stop == "needs_license":
+                        stop_reason = "needs_license"
+                        break
+                    continue
+
+            # --- 步驟二：輸出 CSV + PNG ---
+            step2_tasks = [task_name]
+
+            case_ok = True
+            for s2_task in step2_tasks:
+                if self._stop_requested:
+                    case_ok = False
+                    break
+                self._log(f"步驟二：匯出 {s2_task} — {task['label']}")
+                step2_args = build_step2_command(
+                    dicom_path=dicom_path,
+                    out_path=out_path,
+                    task=s2_task,
+                    erosion_iters=erosion_iters,
+                    slice_start=slice_start,
+                    slice_end=slice_end,
+                    hu_min=hu_min,
+                    hu_max=hu_max,
+                )
+                step2_code, step2_excerpt = self._run_proc([uv_path, *step2_args])
+
+                if self._stop_requested:
+                    case_ok = False
+                    break
+
+                if step2_code != 0:
+                    step_stop = self._handle_step_failure(
+                        task, task_id, task_snapshot, step2_excerpt, f"2/{s2_task}", step2_code
+                    )
+                    if step_stop == "needs_license":
+                        stop_reason = "needs_license"
+                    case_ok = False
+                    break
+
+            if self._stop_requested or stop_reason == "needs_license":
+                self._set_task_status_by_id(task_id, "Stopped")
+                self._session_log_write(
+                    f"CASE_END | id={task_id} | status=stopped | step=2"
+                )
+                with self._lock:
+                    self._progress_done += 1
+                if stop_reason != "needs_license":
+                    stop_reason = "stopped"
+                break
+
+            if not case_ok:
+                with self._lock:
+                    self._progress_done += 1
+                continue
+
+            # 成功
+            self._set_task_status_by_id(task_id, "Success")
+            self._log(f"完成：{task['label']}")
+            self._session_log_write(
+                f"CASE_END | id={task_id} | status=success"
+            )
+            with self._lock:
+                self._progress_done += 1
 
         with self._lock:
             total = self._progress_total

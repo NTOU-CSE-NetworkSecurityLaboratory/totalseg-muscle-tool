@@ -140,7 +140,8 @@
 
     <nav class="mb-4 flex items-center gap-2 border-b border-[#dce4ee] pb-3" aria-label="Main tabs">
       <button id="tab-seg-btn" class="cursor-pointer rounded-md border border-[#d7e0eb] bg-white px-3 py-2 text-sm font-medium text-ink transition-colors duration-150 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brandSoft">自動分割</button>
-      <button id="tab-compare-btn" class="cursor-pointer rounded-md border border-transparent px-3 py-2 text-sm font-medium text-muted transition-colors duration-150 hover:bg-white hover:text-ink focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brandSoft">影像比對</button>
+      <button id="tab-export-btn" class="cursor-pointer rounded-md border border-transparent px-3 py-2 text-sm font-medium text-muted transition-colors duration-150 hover:bg-white hover:text-ink focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brandSoft">匯出 CSV/PNG</button>
+      <button id="tab-compare-btn" class="cursor-pointer rounded-md border border-transparent px-3 py-2 text-sm font-medium text-muted transition-colors duration-150 hover:bg-white hover:text-ink focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brandSoft">單層面積比對</button>
     </nav>
 
     <div id="ui-notice" class="mb-4 hidden rounded-md border px-4 py-2 text-sm"></div>
@@ -148,21 +149,25 @@
     <main id="main-content" class="space-y-4">
       <section id="seg-page" class="space-y-4">
           <div class="grid gap-4 2xl:grid-cols-[360px_1fr]">
-            <aside class="space-y-4">
+            <aside class="flex h-full flex-col gap-4">
               <section class="shell-card rounded-xl p-5">
                 <div class="border-b border-[#e5ebf2] pb-3">
                   <h2 class="text-base font-semibold text-ink">資料來源</h2>
                 </div>
                 <button id="btn-select-source" class="primary-btn mt-4 w-full cursor-pointer rounded-md px-4 py-3 text-sm font-semibold focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brandSoft">選擇 DICOM 資料夾</button>
-                <p id="source-label" class="soft-field mt-3 break-all rounded-md px-3 py-2 text-xs text-muted">尚未選擇資料夾</p>
+                <div class="mt-3 flex items-center gap-2">
+                  <p id="source-label" class="soft-field min-w-0 flex-1 break-all rounded-md px-3 py-2 text-xs text-muted">尚未選擇資料夾</p>
+                  <button id="btn-open-folder" class="toolbar-btn flex-shrink-0 cursor-pointer rounded-md px-2 py-2 text-xs" title="開啟資料夾">📂</button>
+                </div>
                 <p id="range-hint" class="mt-2 text-xs text-muted"></p>
               </section>
 
-              <section class="shell-card rounded-xl p-5">
+              <section class="shell-card flex flex-1 flex-col rounded-xl p-5">
                 <div class="border-b border-[#e5ebf2] pb-3">
                   <h2 class="text-base font-semibold text-ink">流程設定</h2>
                 </div>
                 <div class="mt-3 space-y-3 text-sm">
+                  <div id="modality-section">
                   <label class="block">
                     <span class="mb-1 block text-xs font-medium uppercase tracking-wide text-muted">影像類型</span>
                     <select id="modality" class="soft-field w-full rounded-md px-3 py-2 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brandSoft">
@@ -170,28 +175,44 @@
                       <option>MRI</option>
                     </select>
                   </label>
+                  </div>
                   <label class="block">
                     <span class="mb-1 block text-xs font-medium uppercase tracking-wide text-muted">分割任務</span>
                     <select id="task" class="soft-field w-full rounded-md px-3 py-2 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brandSoft"></select>
                   </label>
-                  <label class="block">
-                    <span class="mb-1 block text-xs font-medium uppercase tracking-wide text-muted">侵蝕次數</span>
-                    <input id="erosion-iters" type="number" min="0" value="2" class="soft-field w-full rounded-md px-3 py-2 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brandSoft" />
-                  </label>
-                  <div class="soft-card rounded-md p-3">
-                    <label class="mb-2 flex items-center gap-2">
-                      <input id="chk-range" type="checkbox" class="h-4 w-4 rounded border-[#ccd9ee] text-brand" />
-                      <span class="text-xs font-medium uppercase tracking-wide text-ink">切片範圍</span>
-                    </label>
-                    <div class="grid grid-cols-2 gap-2">
-                      <label>
-                        <span class="mb-1 block text-[11px] text-muted">起始</span>
-                        <input id="slice-start" type="number" min="1" value="1" class="soft-field w-full rounded-md px-2 py-2" />
+                  <div id="export-settings-section" class="hidden space-y-3">
+                    <div class="soft-card rounded-md p-3">
+                      <div class="mb-2 text-xs font-medium uppercase tracking-wide text-ink">侵蝕次數</div>
+                      <input id="erosion-iters" type="number" min="0" value="2" class="soft-field w-full rounded-md px-2 py-2" />
+                    </div>
+                    <div class="soft-card rounded-md p-3">
+                      <label class="mb-2 flex items-center gap-2">
+                        <input id="chk-range" type="checkbox" class="h-4 w-4 rounded border-[#ccd9ee] text-brand" />
+                        <span class="text-xs font-medium uppercase tracking-wide text-ink">切片範圍</span>
                       </label>
-                      <label>
-                        <span class="mb-1 block text-[11px] text-muted">結束</span>
-                        <input id="slice-end" type="number" min="1" placeholder="auto" class="soft-field w-full rounded-md px-2 py-2" />
-                      </label>
+                      <div class="grid grid-cols-2 gap-2">
+                        <label>
+                          <span class="mb-1 block text-[11px] text-muted">起始</span>
+                          <input id="slice-start" type="number" min="1" value="1" class="soft-field w-full rounded-md px-2 py-2" />
+                        </label>
+                        <label>
+                          <span class="mb-1 block text-[11px] text-muted">結束</span>
+                          <input id="slice-end" type="number" min="1" placeholder="auto" class="soft-field w-full rounded-md px-2 py-2" />
+                        </label>
+                      </div>
+                    </div>
+                    <div class="soft-card rounded-md p-3">
+                      <div class="mb-2 text-xs font-medium uppercase tracking-wide text-ink">HU 閾值（選填）</div>
+                      <div class="grid grid-cols-2 gap-2">
+                        <label>
+                          <span class="mb-1 block text-[11px] text-muted">最小值</span>
+                          <input id="hu-min" type="number" placeholder="無" class="soft-field w-full rounded-md px-2 py-2" />
+                        </label>
+                        <label>
+                          <span class="mb-1 block text-[11px] text-muted">最大值</span>
+                          <input id="hu-max" type="number" placeholder="無" class="soft-field w-full rounded-md px-2 py-2" />
+                        </label>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -226,15 +247,19 @@
                 </div>
                 <div class="overflow-hidden rounded-md border border-[#dce4ee] bg-[#fbfcfe]">
                   <table class="w-full text-sm">
-                    <thead class="bg-[#f2f6fb] text-left text-ink">
+                    <thead class="sticky top-0 bg-[#f2f6fb] text-left text-ink">
                       <tr>
                         <th class="w-12 px-3 py-3"></th>
                         <th class="px-3 py-3">病例</th>
                         <th class="w-52 px-3 py-3">狀態</th>
                       </tr>
                     </thead>
-                    <tbody id="task-table-body" class="divide-y divide-[#e7edf6] bg-white"></tbody>
                   </table>
+                  <div class="h-96 overflow-y-auto">
+                    <table class="w-full text-sm">
+                      <tbody id="task-table-body" class="divide-y divide-[#e7edf6] bg-white"></tbody>
+                    </table>
+                  </div>
                 </div>
               </section>
 
@@ -314,9 +339,11 @@
   <div id="license-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-[#2f2a3d]/50 p-4">
     <div class="shell-card w-full max-w-xl rounded-xl p-5">
       <h3 class="text-base font-bold text-ink">套用 TotalSegmentator 授權</h3>
-      <p class="mt-1 text-xs text-muted">貼上 key 或指令，例如 <code>totalseg_set_license -l aca_xxx</code>。</p>
-      <button id="btn-license-open-url" class="mt-3 text-xs text-brandStrong underline underline-offset-2">開啟授權申請頁面</button>
-      <textarea id="license-input" class="soft-field mt-3 h-28 w-full rounded-md px-3 py-2 text-sm" placeholder="aca_XXXX or command"></textarea>
+      <p class="mt-1 text-xs text-muted">貼上授權金鑰，格式：<code>aca_XXXX</code></p>
+      <div class="mt-3 flex gap-2">
+        <input id="license-input" type="text" class="soft-field flex-1 rounded-md px-3 py-2 text-sm" placeholder="aca_XXXX" />
+        <button id="btn-license-open-url" class="toolbar-btn cursor-pointer rounded-md px-3 py-2 text-sm">申請授權</button>
+      </div>
       <div class="mt-4 flex justify-end gap-2">
         <button id="btn-license-cancel" class="toolbar-btn cursor-pointer rounded-md px-4 py-2 text-sm">取消</button>
         <button id="btn-license-apply" class="primary-btn cursor-pointer rounded-md px-4 py-2 text-sm font-semibold">套用</button>
@@ -328,29 +355,31 @@
     <div class="shell-card w-full max-w-lg rounded-xl p-5">
       <div class="border-b border-[#e5ebf2] pb-3">
         <h3 class="text-base font-bold text-ink">設定</h3>
-        <p class="mt-1 text-sm text-muted">版本、更新與授權。</p>
       </div>
       <div class="mt-4 space-y-3">
         <div class="soft-card rounded-md px-4 py-3">
-          <div class="text-xs font-medium uppercase tracking-wide text-muted">目前版本</div>
-          <div id="settings-current-version" class="mt-2 text-lg font-semibold text-ink">unknown</div>
-        </div>
-        <div class="soft-card rounded-md px-4 py-3">
-          <div class="text-xs font-medium uppercase tracking-wide text-muted">更新狀態</div>
-          <div id="settings-update-status" class="mt-2 text-sm text-ink">尚未檢查更新</div>
-          <div id="settings-update-hint" class="mt-1 text-xs text-muted"></div>
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="text-xs font-medium uppercase tracking-wide text-muted">版本與更新</div>
+              <div id="settings-current-version" class="mt-1 text-lg font-semibold text-ink">unknown</div>
+              <div id="settings-update-status" class="mt-0.5 text-sm text-ink"></div>
+              <div id="settings-update-hint" class="mt-0.5 text-xs text-muted"></div>
+            </div>
+          </div>
           <div class="mt-3 flex flex-wrap gap-2">
             <button id="btn-check-update" class="toolbar-btn cursor-pointer rounded-md px-3 py-2 text-sm">檢查更新</button>
-            <button id="btn-open-releases" class="toolbar-btn cursor-pointer rounded-md px-3 py-2 text-sm">開啟 Releases</button>
+            <button id="btn-open-releases" class="toolbar-btn cursor-pointer rounded-md px-3 py-2 text-sm">Releases</button>
             <button id="btn-install-update" class="primary-btn cursor-pointer rounded-md px-3 py-2 text-sm">更新到最新正式版</button>
           </div>
         </div>
         <div class="soft-card rounded-md px-4 py-3">
           <div class="text-xs font-medium uppercase tracking-wide text-muted">授權</div>
-          <p class="mt-2 text-xs text-muted">貼上 key 或指令，例如 `totalseg_set_license -l aca_xxx`。</p>
-          <button id="btn-settings-license-open-url" class="mt-2 text-xs text-brandStrong underline underline-offset-2">開啟授權申請頁面</button>
-          <textarea id="settings-license-input" class="soft-field mt-3 h-24 w-full rounded-md px-3 py-2 text-sm" placeholder="aca_XXXX or command"></textarea>
-          <div class="mt-3 flex justify-end">
+          <div id="settings-license-status" class="mt-1.5 text-xs text-muted">讀取中…</div>
+          <div class="mt-3 flex gap-2">
+            <input id="settings-license-input" type="text" class="soft-field flex-1 rounded-md px-3 py-2 text-sm" placeholder="aca_XXXX" />
+            <button id="btn-settings-license-open-url" class="toolbar-btn cursor-pointer rounded-md px-3 py-2 text-sm">申請授權</button>
+          </div>
+          <div class="mt-2 flex justify-end">
             <button id="btn-settings-license-apply" class="primary-btn cursor-pointer rounded-md px-4 py-2 text-sm">套用授權</button>
           </div>
         </div>

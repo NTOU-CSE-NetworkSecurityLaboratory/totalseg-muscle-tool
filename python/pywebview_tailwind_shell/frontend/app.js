@@ -1,5 +1,6 @@
 ﻿const ui = {
   tabSegBtn: document.getElementById("tab-seg-btn"),
+  tabExportBtn: document.getElementById("tab-export-btn"),
   tabCompareBtn: document.getElementById("tab-compare-btn"),
   btnOpenSettings: document.getElementById("btn-open-settings"),
   settingsModal: document.getElementById("settings-modal"),
@@ -11,9 +12,11 @@
   btnOpenReleases: document.getElementById("btn-open-releases"),
   btnInstallUpdate: document.getElementById("btn-install-update"),
   settingsLicenseInput: document.getElementById("settings-license-input"),
+  settingsLicenseStatus: document.getElementById("settings-license-status"),
   btnSettingsLicenseApply: document.getElementById("btn-settings-license-apply"),
   segPage: document.getElementById("seg-page"),
   comparePage: document.getElementById("compare-page"),
+  modalitySection: document.getElementById("modality-section"),
   sourceLabel: document.getElementById("source-label"),
   rangeHint: document.getElementById("range-hint"),
   modality: document.getElementById("modality"),
@@ -22,6 +25,8 @@
   chkRange: document.getElementById("chk-range"),
   sliceStart: document.getElementById("slice-start"),
   sliceEnd: document.getElementById("slice-end"),
+  huMin: document.getElementById("hu-min"),
+  huMax: document.getElementById("hu-max"),
   taskTableBody: document.getElementById("task-table-body"),
   progressLabel: document.getElementById("progress-label"),
   progressCase: document.getElementById("progress-case"),
@@ -31,6 +36,7 @@
   sessionLogPathCard: document.getElementById("session-log-path-card"),
   progressBar: document.getElementById("progress-bar"),
   btnSelectSource: document.getElementById("btn-select-source"),
+  btnOpenFolder: document.getElementById("btn-open-folder"),
   btnSelectAll: document.getElementById("btn-select-all"),
   btnUnselectAll: document.getElementById("btn-unselect-all"),
   btnStart: document.getElementById("btn-start"),
@@ -68,6 +74,7 @@ const state = {
   lastErrorExcerpt: "",
   updateStatus: null,
   dismissedPendingAction: "",
+  activeMode: "full",
 };
 
 async function copyText(text) {
@@ -87,25 +94,33 @@ async function copyText(text) {
 }
 
 function setTab(tab) {
-  const isSeg = tab === "seg";
-  ui.segPage.classList.toggle("hidden", !isSeg);
-  ui.comparePage.classList.toggle("hidden", isSeg);
+  // page visibility
+  ui.segPage.classList.toggle("hidden", tab === "compare");
+  ui.comparePage.classList.toggle("hidden", tab !== "compare");
 
-  ui.tabSegBtn.classList.toggle("bg-brand", isSeg);
-  ui.tabSegBtn.classList.toggle("text-white", isSeg);
-  ui.tabSegBtn.classList.toggle("border-[#335fc1]", isSeg);
-  ui.tabSegBtn.classList.toggle("text-muted", !isSeg);
-  ui.tabSegBtn.classList.toggle("bg-white", !isSeg);
-  ui.tabSegBtn.classList.toggle("border-[#d7e0eb]", !isSeg);
-  ui.tabSegBtn.classList.toggle("hover:bg-brandSoft", !isSeg);
+  // modality hidden only on compare tab
+  if (ui.modalitySection) ui.modalitySection.classList.toggle("hidden", tab === "compare");
 
-  ui.tabCompareBtn.classList.toggle("bg-brand", !isSeg);
-  ui.tabCompareBtn.classList.toggle("text-white", !isSeg);
-  ui.tabCompareBtn.classList.toggle("border-[#335fc1]", !isSeg);
-  ui.tabCompareBtn.classList.toggle("text-muted", isSeg);
-  ui.tabCompareBtn.classList.toggle("bg-white", isSeg);
-  ui.tabCompareBtn.classList.toggle("border-[#d7e0eb]", isSeg);
-  ui.tabCompareBtn.classList.toggle("hover:bg-brandSoft", isSeg);
+  // export-settings (erosion, slice range, HU) only visible for export tab
+  const exportSettings = document.getElementById("export-settings-section");
+  if (exportSettings) exportSettings.classList.toggle("hidden", tab !== "export");
+
+  // active mode
+  state.activeMode = tab === "export" ? "export_only" : "full";
+
+  // tab button active styles
+  const ACTIVE = ["bg-brand", "text-white", "border-[#335fc1]"];
+  const INACTIVE = ["text-muted", "bg-white", "border-[#d7e0eb]", "hover:bg-brandSoft"];
+
+  for (const [btn, name] of [
+    [ui.tabSegBtn, "seg"],
+    [ui.tabExportBtn, "export"],
+    [ui.tabCompareBtn, "compare"],
+  ]) {
+    const active = tab === name;
+    ACTIVE.forEach((c) => btn.classList.toggle(c, active));
+    INACTIVE.forEach((c) => btn.classList.toggle(c, !active));
+  }
 }
 
 function showNotice(kind, text) {
@@ -270,6 +285,14 @@ function applyLogEvents(events) {
   }
 }
 
+function syncSliceRangeInputs() {
+  const enabled = ui.chkRange.checked;
+  for (const el of [ui.sliceStart, ui.sliceEnd]) {
+    el.disabled = !enabled;
+    el.classList.toggle("opacity-40", !enabled);
+  }
+}
+
 function setControlsDisabled(disabled) {
   const controls = [
     ui.btnSelectSource,
@@ -281,6 +304,8 @@ function setControlsDisabled(disabled) {
     ui.chkRange,
     ui.sliceStart,
     ui.sliceEnd,
+    ui.huMin,
+    ui.huMax,
   ];
   for (const el of controls) {
     el.disabled = disabled;
@@ -428,15 +453,15 @@ async function pollState() {
 
 async function startRun() {
   const payload = {
+    mode: state.activeMode,
     modality: ui.modality.value,
     task: ui.task.value,
-    spine: true,
-    fast: false,
-    auto_draw: true,
     erosion_iters: Number(ui.erosionIters.value || 2),
     range_enabled: ui.chkRange.checked,
     slice_start: ui.sliceStart.value || "1",
     slice_end: ui.sliceEnd.value || "",
+    hu_min: ui.huMin.value !== "" ? Number(ui.huMin.value) : null,
+    hu_max: ui.huMax.value !== "" ? Number(ui.huMax.value) : null,
   };
   const res = await window.pywebview.api.start_segmentation(payload);
   if (!res.ok) {
@@ -480,9 +505,27 @@ function dismissLicenseModal() {
   closeLicenseModal();
 }
 
+async function refreshLicenseStatus() {
+  if (!ui.settingsLicenseStatus) return;
+  try {
+    const res = await window.pywebview.api.get_current_license();
+    if (res.has_license) {
+      ui.settingsLicenseStatus.textContent = `目前授權：${res.masked_key}`;
+      ui.settingsLicenseStatus.className = "mt-1.5 text-xs text-[#4d8069]";
+    } else {
+      ui.settingsLicenseStatus.textContent = "尚未設定授權";
+      ui.settingsLicenseStatus.className = "mt-1.5 text-xs text-[#8f5f70]";
+    }
+  } catch {
+    ui.settingsLicenseStatus.textContent = "無法讀取授權狀態";
+    ui.settingsLicenseStatus.className = "mt-1.5 text-xs text-muted";
+  }
+}
+
 function openSettingsModal() {
   ui.settingsModal.classList.remove("hidden");
   ui.settingsModal.classList.add("flex");
+  refreshLicenseStatus();
 }
 
 function closeSettingsModal() {
@@ -570,7 +613,7 @@ async function applyLicenseFromSettings() {
   showNotice("success", `授權已套用：${res.masked_key}`);
   state.dismissedPendingAction = "";
   ui.settingsLicenseInput.value = "";
-  await pollState();
+  await Promise.all([pollState(), refreshLicenseStatus()]);
 }
 
 async function retryFailedCase() {
@@ -603,6 +646,7 @@ async function bootstrap() {
   renderState(data.state);
 
   ui.tabSegBtn.addEventListener("click", () => setTab("seg"));
+  ui.tabExportBtn.addEventListener("click", () => setTab("export"));
   ui.tabCompareBtn.addEventListener("click", () => setTab("compare"));
   ui.btnOpenSettings.addEventListener("click", openSettingsModal);
   ui.btnCloseSettings.addEventListener("click", closeSettingsModal);
@@ -612,6 +656,14 @@ async function bootstrap() {
   ui.btnSettingsLicenseApply.addEventListener("click", applyLicenseFromSettings);
 
   ui.modality.addEventListener("change", (e) => setTaskOptions(e.target.value));
+
+  ui.chkRange.addEventListener("change", syncSliceRangeInputs);
+  syncSliceRangeInputs();
+
+  ui.btnOpenFolder.addEventListener("click", async () => {
+    const res = await window.pywebview.api.open_source_folder();
+    if (res && !res.ok) showNotice("error", res.message || "無法開啟資料夾");
+  });
 
   ui.btnSelectSource.addEventListener("click", async () => {
     const res = await window.pywebview.api.choose_source_folder();
@@ -672,6 +724,8 @@ async function bootstrap() {
   ui.settingsModal.addEventListener("click", (e) => {
     if (e.target === ui.settingsModal) closeSettingsModal();
   });
+
+  setTab("seg");
 
   if (state.pollingTimer) clearInterval(state.pollingTimer);
   state.pollingTimer = setInterval(pollState, 700);

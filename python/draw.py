@@ -1,5 +1,6 @@
 import argparse
 import colorsys
+import json
 import sys
 from collections import Counter
 from pathlib import Path
@@ -68,7 +69,7 @@ def draw_legend(image, slice_labels, color_map):
 
 
 def discover_mask_files(
-    dicom_dir: Path, masks_dir: Path = None, task_name=None, fast=False
+    dicom_dir: Path, masks_dir: Path = None, task_name=None
 ):
     """
     原始邏輯：如果有傳 masks_dir 就用，否則自己算
@@ -83,7 +84,7 @@ def discover_mask_files(
         return mask_files
 
     # Fallback: 自己算（舊邏輯）
-    seg_dir_name = f"segmentation_{task_name}" + ("_fast" if fast else "")
+    seg_dir_name = f"segmentation_{task_name}"
     seg_dir = dicom_dir.parent / f"{dicom_dir.name}_output" / seg_dir_name
 
     if seg_dir.exists():
@@ -115,29 +116,20 @@ def load_masks(mask_files, reference):
     return masks
 
 
-# 加入 0.1 版本：找出當前 slice 的脊椎標籤
-def find_spine_label(slice_idx, dicom_dir: Path, fast=False):
-    for seg_name in [
-        "segmentation_total",
-        "segmentation_total_fast",
-        "segmentation_spine_fast",
-    ]:
-        seg_dir = dicom_dir.parent / f"{dicom_dir.name}_output" / (seg_name)
-        if not seg_dir.is_dir():
-            continue
-        for mask_file in sorted(seg_dir.glob("vertebrae_*.nii.gz")):
-            try:
-                arr = sitk.GetArrayFromImage(sitk.ReadImage(str(mask_file)))
-                if slice_idx < arr.shape[0] and np.any(arr[slice_idx] > 0):
-                    name = (
-                        mask_file.name.replace("vertebrae_", "")
-                        .replace(".nii.gz", "")
-                        .replace(".nii", "")
-                    )
-                    return name
-            except Exception:
-                continue
-    return None
+def find_spine_label(slice_idx: int, spine_labels: dict) -> str | None:
+    """從 spine.json 的 slice_labels dict 查找指定 slice 的脊椎標籤。"""
+    return spine_labels.get(str(slice_idx))
+
+
+def load_spine_labels(spine_json: Path) -> dict:
+    """讀取 spine.json，回傳 slice_labels dict。找不到或格式錯誤時回傳空 dict。"""
+    if spine_json is None or not spine_json.exists():
+        return {}
+    try:
+        meta = json.loads(spine_json.read_text())
+        return meta.get("slice_labels", {})
+    except Exception:
+        return {}
 
 
 # 加入 0.1 版本：在影像上繪製脊椎標籤文字
@@ -154,6 +146,23 @@ def draw_spine_label(image, spine_label):
     labeltext = f"Spine:{spine_label}"
     draw.text((x + 1, y + 1), labeltext, fill=(0, 0, 0, 240), font=font)
     draw.text((x, y), labeltext, fill=(255, 255, 255, 255), font=font)
+
+
+def save_overlay_png(
+    overlay_rgb,
+    *,
+    output_path: Path,
+    slice_labels,
+    color_map,
+    spine_label=None,
+    draw_annotations=True,
+):
+    overlay_img = Image.fromarray(np.clip(overlay_rgb, 0, 255).astype(np.uint8))
+    if draw_annotations:
+        draw_legend(overlay_img, list(dict.fromkeys(slice_labels)), color_map)
+    if draw_annotations and spine_label:
+        draw_spine_label(overlay_img, spine_label)
+    overlay_img.save(output_path)
 
 
 def erode_mask_slice(mask_slice, erosion_iters):
@@ -203,18 +212,28 @@ def build_overlay_png_names(dicom_files):
 
 def dicom_to_overlay_png(
     dicom_dir: Path,
-    out_dir: Path,
-    masks_dir: Path = None,
-    show_spine=True,
-    task_name="abdominal_muscles",
-    fast=False,
-    erosion_iters=2,
+    out_dir: Path | None,
+    *,
     eroded_out_dir: Path = None,
+    nolabel_out_dir: Path = None,
+    eroded_nolabel_out_dir: Path = None,
+    masks_dir: Path = None,
+    spine_json: Path = None,
+    task_name="abdominal_muscles",
+    erosion_iters=2,
     slice_start=None,
     slice_end=None,
 ):
     validate_path_ascii(dicom_dir)
-    validate_path_ascii(out_dir)
+    output_dirs = [
+        path
+        for path in (out_dir, eroded_out_dir, nolabel_out_dir, eroded_nolabel_out_dir)
+        if path is not None
+    ]
+    if not output_dirs:
+        raise RuntimeError("No output PNG directory provided.")
+    for output_dir in output_dirs:
+        validate_path_ascii(output_dir)
 
     reader = sitk.ImageSeriesReader()
     files = reader.GetGDCMSeriesFileNames(str(dicom_dir))
@@ -228,7 +247,7 @@ def dicom_to_overlay_png(
 
     wc, ww = 40, 400  # Window center and width
 
-    mask_files = discover_mask_files(dicom_dir, masks_dir, task_name, fast)
+    mask_files = discover_mask_files(dicom_dir, masks_dir, task_name)
     all_masks = load_masks(mask_files, image)
 
     color_map = {
@@ -238,11 +257,11 @@ def dicom_to_overlay_png(
         )
     }
 
-    out_dir.mkdir(parents=True, exist_ok=True)
-    if eroded_out_dir and erosion_iters > 0:
-        eroded_out_dir.mkdir(parents=True, exist_ok=True)
+    spine_labels = load_spine_labels(spine_json)
+
+    for output_dir in output_dirs:
+        output_dir.mkdir(parents=True, exist_ok=True)
     output_count = 0
-    eroded_output_count = 0
 
     # Slice range logic
     total_slices = len(files)
@@ -254,7 +273,7 @@ def dicom_to_overlay_png(
         # Skip if outside range
         if idx < start or idx >= end:
             continue
-            
+
         try:
             slice_arr = arr[idx]
             minv, maxv = wc - ww / 2, wc + ww / 2
@@ -262,53 +281,66 @@ def dicom_to_overlay_png(
             base_u8 = (windowed * 255.0 + 0.5).astype(np.uint8)
             base_rgb = np.stack([base_u8] * 3, axis=-1).astype(np.float32)
             overlay_rgb = base_rgb.copy()
-            overlay_eroded_rgb = base_rgb.copy() if eroded_out_dir and erosion_iters > 0 else None
+            eroded_overlay_rgb = base_rgb.copy()
 
-            slice_labels = []
-            slice_labels_eroded = []
+            slice_labels_used = []
+            eroded_slice_labels_used = []
             for name, mask_arr in all_masks:
                 mask_slice = mask_arr[idx] > 0
                 if np.any(mask_slice):
-                    slice_labels.append(name)
+                    slice_labels_used.append(name)
                     color = color_map.get(name, (255, 0, 0))
                     for c in range(3):
                         overlay_rgb[mask_slice, c] = (
                             overlay_rgb[mask_slice, c] * 0.4 + color[c] * 0.6
                         )
-                if overlay_eroded_rgb is not None:
-                    eroded_slice = erode_mask_slice(mask_slice, erosion_iters)
-                    if np.any(eroded_slice):
-                        slice_labels_eroded.append(name)
-                        color = color_map.get(name, (255, 0, 0))
-                        for c in range(3):
-                            overlay_eroded_rgb[eroded_slice, c] = (
-                                overlay_eroded_rgb[eroded_slice, c] * 0.4 + color[c] * 0.6
-                            )
 
-            overlay_img = Image.fromarray(np.clip(overlay_rgb, 0, 255).astype(np.uint8))
-            draw_legend(overlay_img, list(dict.fromkeys(slice_labels)), color_map)
-            # 加入 0.1 版本的脊椎文字標示邏輯
-            if show_spine:
-                label = find_spine_label(idx, dicom_dir, fast)
-                draw_spine_label(overlay_img, label)
+                eroded_mask_slice = erode_mask_slice(mask_slice, erosion_iters)
+                if np.any(eroded_mask_slice):
+                    eroded_slice_labels_used.append(name)
+                    color = color_map.get(name, (255, 0, 0))
+                    for c in range(3):
+                        eroded_overlay_rgb[eroded_mask_slice, c] = (
+                            eroded_overlay_rgb[eroded_mask_slice, c] * 0.4 + color[c] * 0.6
+                        )
+
             png_filename = png_names[idx]
-            overlay_img.save(out_dir / png_filename)
+            spine_label = find_spine_label(idx, spine_labels) if spine_labels else None
+            if out_dir is not None:
+                save_overlay_png(
+                    overlay_rgb,
+                    output_path=out_dir / png_filename,
+                    slice_labels=slice_labels_used,
+                    color_map=color_map,
+                    spine_label=spine_label,
+                )
+            if eroded_out_dir is not None:
+                save_overlay_png(
+                    eroded_overlay_rgb,
+                    output_path=eroded_out_dir / png_filename,
+                    slice_labels=eroded_slice_labels_used,
+                    color_map=color_map,
+                    spine_label=spine_label,
+                )
+            if nolabel_out_dir is not None:
+                save_overlay_png(
+                    overlay_rgb,
+                    output_path=nolabel_out_dir / png_filename,
+                    slice_labels=slice_labels_used,
+                    color_map=color_map,
+                    spine_label=spine_label,
+                    draw_annotations=False,
+                )
+            if eroded_nolabel_out_dir is not None:
+                save_overlay_png(
+                    eroded_overlay_rgb,
+                    output_path=eroded_nolabel_out_dir / png_filename,
+                    slice_labels=eroded_slice_labels_used,
+                    color_map=color_map,
+                    spine_label=spine_label,
+                    draw_annotations=False,
+                )
             output_count += 1
-
-            if overlay_eroded_rgb is not None:
-                overlay_eroded_img = Image.fromarray(
-                    np.clip(overlay_eroded_rgb, 0, 255).astype(np.uint8)
-                )
-                draw_legend(
-                    overlay_eroded_img,
-                    list(dict.fromkeys(slice_labels_eroded)),
-                    color_map,
-                )
-                if show_spine:
-                    label = find_spine_label(idx, dicom_dir, fast)
-                    draw_spine_label(overlay_eroded_img, label)
-                overlay_eroded_img.save(eroded_out_dir / png_filename)
-                eroded_output_count += 1
 
         except Exception as e:
             print(
@@ -316,96 +348,71 @@ def dicom_to_overlay_png(
             )
             continue
 
-    print(f"[SUCCESS] Total overlays saved: {output_count} in {out_dir}")
-    if eroded_out_dir and erosion_iters > 0:
-        print(
-            f"[SUCCESS] Total eroded overlays saved: {eroded_output_count} in {eroded_out_dir}"
-        )
+    print(f"[SUCCESS] Total overlays saved: {output_count} slices in {output_dirs[0]}")
 
 
 def main():
     parser = argparse.ArgumentParser(description="Draw overlays for segmentation.")
     parser.add_argument(
-        "--dicom", type=str, default="SER00005", help="Input DICOM folder"
+        "--dicom", type=str, required=True, help="Input DICOM folder"
     )
     parser.add_argument(
         "--out",
         type=str,
         default=None,
-        help="Output base folder (parent of xxx_output)",
-    )
-    parser.add_argument(
-        "--spine", type=int, default=1, help="Show spine labels (1=Yes, 0=No)"
+        help="Output root folder",
     )
     parser.add_argument(
         "--task", type=str, default="abdominal_muscles", help="Segmentation task"
     )
     parser.add_argument(
-        "--fast", type=int, default=0, help="Use fast segmentation (1=Yes)"
-    )
-    parser.add_argument(
         "--erosion_iters",
         type=int,
         default=2,
-        help="Erosion iterations for eroded PNG output (default: 2)",
+        help="Erosion iterations for PNG output (default: 2)",
     )
     parser.add_argument("--slice_start", type=int, default=None, help="Start slice (1-indexed)")
     parser.add_argument("--slice_end", type=int, default=None, help="End slice (1-indexed)")
 
     args = parser.parse_args()
 
-    # === Path calculation (same as seg.py) ===
     dicom_path = Path(args.dicom).resolve()
-
     output_base = (
         Path(args.out) if args.out else dicom_path.parent
     ) / f"{dicom_path.name}_output"
 
-    output_base.mkdir(parents=True, exist_ok=True)
+    seg_dir = output_base / f"segmentation_{args.task}"
+    png_dir = seg_dir / "png"
+    png_eroded_dir = seg_dir / "png_eroded"
+    png_nolabel_dir = seg_dir / "png_nolabel"
+    png_eroded_nolabel_dir = seg_dir / "png_eroded_nolabel"
+    spine_json = output_base / "spine.json"
 
-    seg_folder_name = f"segmentation_{args.task}" + ("_fast" if args.fast else "")
-    seg_output = output_base / seg_folder_name
-    png_folder = output_base / "png"
-    png_eroded_folder = output_base / "png_eroded"
-
-    # === Debug output ===
-    print("\n" + "=" * 60)
-    print("[DEBUG] Path Resolution")
-    print("=" * 60)
-    print(f"  DICOM input:       {dicom_path}")
-    print(f"  Output base:       {output_base}")
-    print(f"  Mask folder:       {seg_output}")
-    print(f"  PNG folder:        {png_folder}")
-    print(f"  PNG eroded folder: {png_eroded_folder}")
-    print("=" * 60 + "\n")
-
-    # === Error checking ===
     if not dicom_path.exists():
         print(f"[ERROR] DICOM folder not found: {dicom_path}")
-        print(f"   Current working directory: {Path.cwd()}")
         sys.exit(1)
 
-    if not seg_output.exists():
-        print(f"[ERROR] Mask folder not found: {seg_output}")
-        print(f"   Expected path: {seg_output}")
-        print("\n   Possible reasons:")
-        print("   1. seg.py hasn't run yet or failed")
-        print(f"   2. Task name mismatch (current: {args.task})")
-        print(
-            f"   3. Fast mode mismatch (current: {'fast' if args.fast else 'normal'})"
-        )
+    if not seg_dir.exists():
+        print(f"[ERROR] Mask folder not found: {seg_dir}")
+        print("   Please run seg.py (step 1) first.")
+        sys.exit(1)
+
+    if not spine_json.exists():
+        print(f"[ERROR] spine.json not found: {spine_json}")
+        print("   Please run seg.py (step 1) first.")
         sys.exit(1)
 
     try:
         dicom_to_overlay_png(
             dicom_path,
-            png_folder,  # 傳 PNG 資料夾
-            seg_output,  # 傳 mask 資料夾
-            show_spine=bool(args.spine),
+            png_dir,
+            eroded_out_dir=png_eroded_dir,
+            nolabel_out_dir=png_nolabel_dir,
+            eroded_nolabel_out_dir=png_eroded_nolabel_dir,
+            masks_dir=seg_dir,
+            spine_json=spine_json,
             task_name=args.task,
-            fast=bool(args.fast),
             erosion_iters=args.erosion_iters,
-            eroded_out_dir=png_eroded_folder,
             slice_start=args.slice_start,
             slice_end=args.slice_end,
         )

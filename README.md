@@ -108,8 +108,6 @@ uv run basedpyright .
 ```
 
 Core tests include:
-- command assembly (`test_auto_draw_cmd.py`)
-- GUI smoke checks for defaults/copy/path rules (`test_gui_pyside_smoke.py`)
 - slice ordering / PNG naming behavior (`test_seg_draw_slice_behavior.py`)
 
 ### FAQ
@@ -244,8 +242,7 @@ uv run pytest -q
 ```
 
 目前核心測試包含：
-- 命令組裝測試（`test_auto_draw_cmd.py`）
-- GUI smoke 測試（`test_gui_pyside_smoke.py`，含預設值/文案/路徑規則）
+- slice 順序 / PNG 命名行為測試（`test_seg_draw_slice_behavior.py`）
 
 ### 常見問題
 

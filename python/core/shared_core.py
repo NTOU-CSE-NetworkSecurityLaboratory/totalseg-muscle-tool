@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,17 +28,13 @@ def folder_numeric_sort_key(path_value: str | Path):
 
 
 def has_dicom_files(folder: Path) -> bool:
-    if list(folder.glob("*.dcm")):
+    if any(folder.glob("*.dcm")):
         return True
-    files = [f for f in folder.iterdir() if f.is_file() and not f.name.startswith(".")]
-    if not files:
-        return False
     if sitk:
         try:
-            reader = sitk.ImageFileReader()
-            reader.SetFileName(str(files[0]))
-            reader.ReadImageInformation()
-            return True
+            reader = sitk.ImageSeriesReader()
+            names = reader.GetGDCMSeriesFileNames(str(folder))
+            return bool(names)
         except Exception:
             return False
     return False
@@ -93,19 +90,22 @@ class CaseItem:
     slice_count: int | None
 
 
+_SCAN_SKIP = ("_output", "TotalSeg_Backend")
+
+
 def scan_dicom_cases(root_path: str | Path) -> list[CaseItem]:
     root = Path(root_path)
     valid_folders: list[Path] = []
     if has_dicom_files(root):
         valid_folders.append(root)
     else:
-        for sub in root.rglob("*"):
-            if not sub.is_dir():
+        for dirpath, dirs, _ in os.walk(root, topdown=True):
+            dirs[:] = [d for d in dirs if not any(s in d for s in _SCAN_SKIP)]
+            p = Path(dirpath)
+            if p == root:
                 continue
-            if "_output" in sub.name or "TotalSeg_Backend" in sub.name:
-                continue
-            if has_dicom_files(sub):
-                valid_folders.append(sub)
+            if has_dicom_files(p):
+                valid_folders.append(p)
     valid_folders.sort(key=folder_numeric_sort_key)
 
     items: list[CaseItem] = []
@@ -119,51 +119,66 @@ def scan_dicom_cases(root_path: str | Path) -> list[CaseItem]:
     return items
 
 
-def build_seg_command(
+def discover_export_tasks(dicom_path: str | Path, out_path: str | Path | None = None) -> list[str]:
+    """Return task names with completed segmentation output (excludes spine/fast tasks)."""
+    dicom = Path(dicom_path)
+    base = (Path(out_path) if out_path else dicom.parent) / f"{dicom.name}_output"
+    if not base.is_dir():
+        return []
+    tasks = []
+    for d in base.iterdir():
+        if not d.is_dir() or not d.name.startswith("segmentation_"):
+            continue
+        task_name = d.name[len("segmentation_"):]
+        if "spine" in task_name or task_name.endswith("_fast"):
+            continue
+        if any((d / "masks").glob("*.nii.gz")):
+            tasks.append(task_name)
+    return sorted(tasks)
+
+
+def build_step1_command(
     *,
     dicom_path: str,
     out_path: str,
     task: str,
     modality: str,
-    spine: bool,
-    fast: bool,
-    auto_draw: bool,
-    erosion_iters: int | str,
+) -> list[str]:
+    return [
+        "run", "--no-sync", "python", "-u", "seg.py",
+        "--dicom", str(dicom_path),
+        "--out", str(out_path),
+        "--task", str(task),
+        "--modality", str(modality),
+    ]
+
+
+def build_step2_command(
+    *,
+    dicom_path: str,
+    out_path: str,
+    task: str,
+    erosion_iters: int | str = 2,
     slice_start: int | None = None,
     slice_end: int | None = None,
+    hu_min: float | None = None,
+    hu_max: float | None = None,
 ) -> list[str]:
-    # Fixed pipeline contract:
-    # - spine is always enabled
-    # - PNG generation is always enabled
-    # - fast mode is removed from the normal path
-    _ = (spine, fast, auto_draw)
     cmd = [
-        "run",
-        "--no-sync",
-        "python",
-        "-u",
-        "seg.py",
-        "--dicom",
-        str(dicom_path),
-        "--out",
-        str(out_path),
-        "--task",
-        str(task),
-        "--modality",
-        str(modality),
-        "--spine",
-        "1",
-        "--fast",
-        "0",
-        "--auto_draw",
-        "1",
-        "--erosion_iters",
-        str(erosion_iters),
+        "run", "--no-sync", "python", "-u", "export.py",
+        "--dicom", str(dicom_path),
+        "--out", str(out_path),
+        "--task", str(task),
+        "--erosion_iters", str(erosion_iters),
     ]
     if slice_start is not None:
         cmd.extend(["--slice_start", str(slice_start)])
     if slice_end is not None:
         cmd.extend(["--slice_end", str(slice_end)])
+    if hu_min is not None:
+        cmd.extend(["--hu_min", str(hu_min)])
+    if hu_max is not None:
+        cmd.extend(["--hu_max", str(hu_max)])
     return cmd
 
 
