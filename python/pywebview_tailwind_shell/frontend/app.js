@@ -75,6 +75,7 @@ const state = {
   updateStatus: null,
   dismissedPendingAction: "",
   activeMode: "full",
+  lastRangeHintApplyKey: "",
 };
 
 async function copyText(text) {
@@ -367,21 +368,28 @@ function renderDiagnostics(diag) {
   });
 }
 
-function applyRangeHint(rangeHint, tasks) {
+function applyRangeHint(rangeHint, tasks, sourceRoot) {
+  const applyKey = `${sourceRoot || ""}|${rangeHint}|${tasks?.length || 0}|${tasks?.[0]?.slice_count || 0}`;
   if (rangeHint === "single_auto_fill" && tasks?.length === 1) {
     const n = Number(tasks[0]?.slice_count || 0);
     if (n > 0) {
-      ui.sliceStart.value = "1";
-      ui.sliceEnd.value = String(n);
+      if (state.lastRangeHintApplyKey !== applyKey) {
+        ui.sliceStart.value = "1";
+        ui.sliceEnd.value = String(n);
+        state.lastRangeHintApplyKey = applyKey;
+      }
       ui.rangeHint.textContent = `偵測到單一病例，已自動填入切片範圍：1 到 ${n}。`;
       return;
     }
   }
   if (rangeHint === "multi_auto_clamp") {
+    state.lastRangeHintApplyKey = applyKey;
     ui.rangeHint.textContent = "偵測到多個病例，結束切片會依各病例自動截斷。";
     ui.sliceEnd.placeholder = "自動截斷";
     return;
   }
+  state.lastRangeHintApplyKey = "";
+  ui.sliceEnd.placeholder = "";
   ui.rangeHint.textContent = "";
 }
 
@@ -400,7 +408,7 @@ function renderState(s) {
 
   renderTaskTable(s.tasks || []);
   renderDiagnostics(s.diagnostics || []);
-  applyRangeHint(s.range_hint, s.tasks || []);
+  applyRangeHint(s.range_hint, s.tasks || [], s.source_root || "");
 
   const done = s.progress?.done || 0;
   const total = s.progress?.total || 0;
