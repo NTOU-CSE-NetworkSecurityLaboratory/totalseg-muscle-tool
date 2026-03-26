@@ -265,7 +265,6 @@ class AppApi:
             return {"ok": False, "message": "資料夾不存在"}
 
         valid_cases = scan_dicom_cases(root)
-        valid_cases.sort(key=lambda c: folder_numeric_sort_key(c.folder))
 
         tasks: list[dict[str, Any]] = []
         for idx, item in enumerate(valid_cases):
@@ -762,16 +761,31 @@ class AppApi:
             task_snapshot["run_config"] = dict(config)
 
             task_name = str(config.get("task", "total"))
-            modality = str(config.get("modality", "CT"))
             erosion_iters = int(config.get("erosion_iters", 2))
             hu_min_raw = config.get("hu_min") or None
             hu_max_raw = config.get("hu_max") or None
             hu_min = float(hu_min_raw) if hu_min_raw is not None else None
             hu_max = float(hu_max_raw) if hu_max_raw is not None else None
-            run_mode = str(config.get("mode", "full"))
+            run_mode = str(config.get("mode", "seg_only"))
 
-            if run_mode != "export_only":
-                # --- 步驟一：分割 ---
+            if run_mode == "seg_only":
+                modality = str(config.get("modality", "CT"))
+                # --- 步驟一：分割（已有結果則跳過）---
+                primary_seg_dir = (
+                    Path(dicom_path).parent
+                    / f"{Path(dicom_path).name}_output"
+                    / f"segmentation_{task_name}"
+                )
+                if any(primary_seg_dir.glob("*.nii.gz")):
+                    self._log(f"已有分割結果，跳過步驟一：{task['label']}")
+                    self._set_task_status_by_id(task_id, "Success")
+                    self._session_log_write(
+                        f"CASE_END | id={task_id} | status=skipped_seg_exists"
+                    )
+                    with self._lock:
+                        self._progress_done += 1
+                    continue
+
                 self._log(f"步驟一：分割 {task['label']}")
                 step1_args = build_step1_command(
                     dicom_path=dicom_path,
@@ -802,19 +816,23 @@ class AppApi:
                         break
                     continue
 
-            # --- 步驟二：輸出 CSV + PNG ---
-            step2_tasks = [task_name]
-
-            case_ok = True
-            for s2_task in step2_tasks:
+            elif run_mode == "export_only":
+                # --- 步驟二：匯出 CSV + PNG ---
                 if self._stop_requested:
-                    case_ok = False
+                    self._set_task_status_by_id(task_id, "Stopped")
+                    self._session_log_write(
+                        f"CASE_END | id={task_id} | status=stopped | step=2"
+                    )
+                    with self._lock:
+                        self._progress_done += 1
+                    stop_reason = "stopped"
                     break
-                self._log(f"步驟二：匯出 {s2_task} — {task['label']}")
+
+                self._log(f"步驟二：匯出 {task_name} — {task['label']}")
                 step2_args = build_step2_command(
                     dicom_path=dicom_path,
                     out_path=out_path,
-                    task=s2_task,
+                    task=task_name,
                     erosion_iters=erosion_iters,
                     slice_start=slice_start,
                     slice_end=slice_end,
@@ -824,33 +842,25 @@ class AppApi:
                 step2_code, step2_excerpt = self._run_proc([uv_path, *step2_args])
 
                 if self._stop_requested:
-                    case_ok = False
+                    self._set_task_status_by_id(task_id, "Stopped")
+                    self._session_log_write(
+                        f"CASE_END | id={task_id} | status=stopped | step=2"
+                    )
+                    with self._lock:
+                        self._progress_done += 1
+                    stop_reason = "stopped"
                     break
 
                 if step2_code != 0:
                     step_stop = self._handle_step_failure(
-                        task, task_id, task_snapshot, step2_excerpt, f"2/{s2_task}", step2_code
+                        task, task_id, task_snapshot, step2_excerpt, "2", step2_code
                     )
+                    with self._lock:
+                        self._progress_done += 1
                     if step_stop == "needs_license":
                         stop_reason = "needs_license"
-                    case_ok = False
-                    break
-
-            if self._stop_requested or stop_reason == "needs_license":
-                self._set_task_status_by_id(task_id, "Stopped")
-                self._session_log_write(
-                    f"CASE_END | id={task_id} | status=stopped | step=2"
-                )
-                with self._lock:
-                    self._progress_done += 1
-                if stop_reason != "needs_license":
-                    stop_reason = "stopped"
-                break
-
-            if not case_ok:
-                with self._lock:
-                    self._progress_done += 1
-                continue
+                        break
+                    continue
 
             # 成功
             self._set_task_status_by_id(task_id, "Success")

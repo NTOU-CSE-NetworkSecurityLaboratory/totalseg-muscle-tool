@@ -74,7 +74,7 @@ const state = {
   lastErrorExcerpt: "",
   updateStatus: null,
   dismissedPendingAction: "",
-  activeMode: "full",
+  activeMode: "seg_only",
   lastRangeHintApplyKey: "",
 };
 
@@ -107,7 +107,7 @@ function setTab(tab) {
   if (exportSettings) exportSettings.classList.toggle("hidden", tab !== "export");
 
   // active mode
-  state.activeMode = tab === "export" ? "export_only" : "full";
+  state.activeMode = tab === "export" ? "export_only" : "seg_only";
 
   // tab button active styles
   const ACTIVE = ["bg-brand", "text-white", "border-[#335fc1]"];
@@ -435,6 +435,7 @@ function renderState(s) {
   ui.btnRetryFailed.classList.toggle("opacity-60", ui.btnRetryFailed.disabled);
 
   setControlsDisabled(s.running);
+  if (!s.running) syncSliceRangeInputs();
 
 }
 

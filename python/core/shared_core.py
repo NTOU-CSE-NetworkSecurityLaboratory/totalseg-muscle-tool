@@ -119,23 +119,6 @@ def scan_dicom_cases(root_path: str | Path) -> list[CaseItem]:
     return items
 
 
-def discover_export_tasks(dicom_path: str | Path, out_path: str | Path | None = None) -> list[str]:
-    """Return task names with completed segmentation output (excludes spine/fast tasks)."""
-    dicom = Path(dicom_path)
-    base = (Path(out_path) if out_path else dicom.parent) / f"{dicom.name}_output"
-    if not base.is_dir():
-        return []
-    tasks = []
-    for d in base.iterdir():
-        if not d.is_dir() or not d.name.startswith("segmentation_"):
-            continue
-        task_name = d.name[len("segmentation_"):]
-        if "spine" in task_name or task_name.endswith("_fast"):
-            continue
-        if any((d / "masks").glob("*.nii.gz")):
-            tasks.append(task_name)
-    return sorted(tasks)
-
 
 def build_step1_command(
     *,

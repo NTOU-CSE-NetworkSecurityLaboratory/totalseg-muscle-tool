@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from pathlib import Path
 
 from core.csv_service import build_spine_meta, write_spine_json
@@ -86,9 +86,7 @@ def execute_step2_export(
     run_png: Callable[..., None],
 ) -> None:
     """
-    產生 volume CSV、HU CSV 和 PNG overlay。
-
-    已存在的輸出直接跳過（使用者需自行刪除才能重新產生）。
+    產生 volume CSV、HU CSV 和 PNG overlay。永遠覆蓋既有輸出。
 
     export_csvs(mask_dir, volume_csv, hu_csv, dicom_dir, spine_json_path,
                 erosion_iters, slice_start, slice_end, hu_min, hu_max,
@@ -123,57 +121,30 @@ def execute_step2_export(
             log_info("未找到脊椎分割資料夾，使用空白 spine.json（無方向標籤）")
             write_spine_json(paths.spine_json, {"orientation": "cranial_to_caudal", "slice_labels": {}})
 
-    volume_exists = paths.volume_csv.exists()
-    hu_exists = paths.hu_csv.exists()
-    png_exists = paths.png_dir.exists()
-    png_eroded_exists = paths.png_eroded_dir.exists()
-    png_nolabel_exists = paths.png_nolabel_dir.exists()
-    png_eroded_nolabel_exists = paths.png_eroded_nolabel_dir.exists()
+    export_csvs(
+        paths.primary_seg_dir,
+        paths.volume_csv,
+        paths.hu_csv,
+        request.dicom_path,
+        paths.spine_json,
+        erosion_iters=request.erosion_iters,
+        slice_start=request.slice_start,
+        slice_end=request.slice_end,
+        hu_min=request.hu_min,
+        hu_max=request.hu_max,
+        write_volume=True,
+        write_hu=True,
+    )
 
-    if volume_exists:
-        log_info(f"已有檔案，跳過：{paths.volume_csv.name}")
-    if hu_exists:
-        log_info(f"已有檔案，跳過：{paths.hu_csv.name}")
-    if png_exists:
-        log_info(f"已有資料夾，跳過：{paths.png_dir.name}")
-    if png_eroded_exists:
-        log_info(f"已有資料夾，跳過：{paths.png_eroded_dir.name}")
-    if png_nolabel_exists:
-        log_info(f"已有資料夾，跳過：{paths.png_nolabel_dir.name}")
-    if png_eroded_nolabel_exists:
-        log_info(f"已有資料夾，跳過：{paths.png_eroded_nolabel_dir.name}")
-
-    if not volume_exists or not hu_exists:
-        export_csvs(
-            paths.primary_seg_dir,
-            paths.volume_csv,
-            paths.hu_csv,
-            request.dicom_path,
-            paths.spine_json,
-            erosion_iters=request.erosion_iters,
-            slice_start=request.slice_start,
-            slice_end=request.slice_end,
-            hu_min=request.hu_min,
-            hu_max=request.hu_max,
-            write_volume=not volume_exists,
-            write_hu=not hu_exists,
-        )
-
-    if not (
-        png_exists
-        and png_eroded_exists
-        and png_nolabel_exists
-        and png_eroded_nolabel_exists
-    ):
-        run_png(
-            request.dicom_path,
-            None if png_exists else paths.png_dir,
-            None if png_eroded_exists else paths.png_eroded_dir,
-            None if png_nolabel_exists else paths.png_nolabel_dir,
-            None if png_eroded_nolabel_exists else paths.png_eroded_nolabel_dir,
-            paths.primary_seg_dir,
-            paths.spine_json,
-            request.slice_start,
-            request.slice_end,
-            request.erosion_iters,
-        )
+    run_png(
+        request.dicom_path,
+        paths.png_dir,
+        paths.png_eroded_dir,
+        paths.png_nolabel_dir,
+        paths.png_eroded_nolabel_dir,
+        paths.primary_seg_dir,
+        paths.spine_json,
+        request.slice_start,
+        request.slice_end,
+        request.erosion_iters,
+    )

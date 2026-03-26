@@ -3,12 +3,12 @@ import zipfile
 
 from core.update_service import (
     ReleaseInfo,
+    _build_update_runner_script,
     build_update_log_path,
     build_update_status,
     ensure_update_supported_install,
     extract_release_payload,
     is_newer_version,
-    _build_update_runner_script,
 )
 
 

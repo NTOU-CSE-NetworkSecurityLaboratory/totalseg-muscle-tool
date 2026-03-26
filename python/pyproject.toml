@@ -74,12 +74,12 @@ ignore = ["E501"]
 
 [tool.basedpyright]
 include = [
-    "auto_draw_cmd.py",
     "draw.py",
-    "gui_pyside.py",
+    "export.py",
     "seg.py",
     "tests",
     "core",
+    "pywebview_tailwind_shell/backend",
 ]
 exclude = [
     ".venv",

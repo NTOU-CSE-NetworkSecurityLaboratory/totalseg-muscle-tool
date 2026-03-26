@@ -10,7 +10,7 @@ from totalsegmentator.python_api import totalsegmentator
 from core.app_version import read_local_app_version
 from core.fixed_pipeline import execute_step1_segmentation
 from core.output_contract import build_segment_paths
-from core.pipeline_request import SegmentRequest, segment_request_from_args
+from core.pipeline_request import segment_request_from_args
 
 APP_VERSION = read_local_app_version()
 

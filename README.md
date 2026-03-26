@@ -1,4 +1,4 @@
-# TotalSeg Muscle Tool (v0.1.4)
+# TotalSeg Muscle Tool (v0.1.5)
 
 [English](#english) | [中文](#中文)
 
@@ -6,34 +6,44 @@
 
 ## English
 
-A medical image segmentation tool based on TotalSegmentator for CT image muscle segmentation analysis.
+A medical image segmentation tool based on TotalSegmentator for CT/MRI muscle segmentation and analysis.
 
 ### Features
 
-#### **Tool 1: Unified AI Analysis (Unified UI)**
+- **Three-tab WebView UI**: 自動分割 (Segmentation) / 匯出 CSV/PNG (Export) / 單層面積比對 (Compare)
 - **MRI & CT Support**: Select modality to automatically use `total_mr` or standard CT models.
-- **Partial Volume Calculation**: Specify a slice range (e.g., Slices 10-50) for targeted volumetric analysis.
-  - Single-patient mode auto-fills total slice count (`1 ~ N`).
-  - Multi-patient mode applies per-case slice limit clamping automatically.
-- **Smart Detection**: Recursive scanning of nested folders and identification of extension-less DICOMs.
-- **Solution Engine**: Professional error diagnosis that translates technical logs into medical-friendly advice.
-- **Manual vs AI Comparison**: Integrated DICE coefficient and area difference analysis.
-  - AI compare file is constrained to `.nii.gz`.
-- **App Icon Support**: Place `app_icon.ico` (or `app_icon.png`) in repo root or `python/` to auto-apply icon.
+- **Partial Volume Calculation**: Specify a slice range for targeted volumetric analysis.
+  - Single-case mode auto-fills total slice count (`1 ~ N`).
+  - Multi-case mode applies per-case slice limit clamping automatically.
+- **Smart Scanning**: Recursive scan with `_output` folder exclusion; uses GDCM series detection to avoid false positives.
+- **Error Diagnosis**: Translates technical errors into actionable advice (license, CUDA OOM, permission denied).
+- **Manual vs AI Comparison**: DICE coefficient and area difference for single-slice comparison.
+- **Auto Update**: In-app update via GitHub Releases.
 
 ### Quick Start
 
 #### **Windows**
-Double-click `START 啟動.bat` to launch the WebView shell. Background dependencies will be auto-managed on first run via `uv`.
+Double-click `START 啟動.bat`. Dependencies are auto-managed on first run via `uv`.
 
 #### **Doctor Quick Guide**
+
+**Step 1 — Segmentation (自動分割 tab)**
 1. Double-click `START 啟動.bat`
-2. Select the DICOM folder
-3. Choose cases to process
-4. Select `CT` or `MRI`
-5. Set slice range if needed
-6. Click `Start`
-7. Review outputs and logs on the right
+2. Click `選擇來源資料夾` to load DICOM cases
+3. Check the cases to process
+4. Select `CT` or `MRI` and choose a task
+5. Click `開始`
+
+**Step 2 — Export CSV/PNG (匯出 CSV/PNG tab)**
+1. Switch to the `匯出 CSV/PNG` tab
+2. Select the same folder
+3. Choose task and adjust parameters (erosion, slice range, HU threshold) if needed
+4. Click `開始` — outputs are always overwritten with current settings
+
+**Compare (單層面積比對 tab)**
+1. Switch to the `單層面積比對` tab
+2. Select the AI mask file (`.nii.gz`) and manual single-slice mask
+3. Click `執行比對`
 
 ### System Requirements
 
@@ -42,91 +52,70 @@ Double-click `START 啟動.bat` to launch the WebView shell. Background dependen
 - **GPU**: NVIDIA GPU recommended (CUDA support), CPU also supported
 - **Network**: Required for first-time installation
 
-### Output Description
+> **Note**: Move the project to a pure ASCII path (e.g. `C:\tools\`) to avoid issues with Chinese/special characters in paths.
 
-#### **Tool 1: AI Segmentation Output**
+### Output Structure
 
-Example: Input `SER00005/`, output will be created in `SER00005_output/`:
+Example: Input `SER00005/`, output created in `SER00005_output/`:
 
-- `segmentation_<task>/`: One mask per structure (`*.nii.gz`) and `statistics.json`
-- `segmentation_spine/`: Spine segmentation masks
-- `mask_<task>.csv`: Main analysis CSV (4 sections)
-  - Section 1: Area per slice (cm²)
-  - Section 2: Average HU per slice (with erosion, weighted by area for L/R muscles)
-  - Section 3: HU standard deviation per slice (with erosion, weighted by area)
-  - Section 4: Overall summary (pixelcount / volume_cm³ / mean_hu, L/R muscles combined)
-- `mask_spine_fast.csv`: Spine CSV
-- `png/`: One PNG overlay per slice
+```
+SER00005_output/
+├── spine.json                          # Spine slice labels
+├── segmentation_spine_fast/            # Spine masks (*.nii.gz)
+└── segmentation_<task>/
+    ├── *.nii.gz                        # One mask per structure
+    ├── volume_<task>.csv               # Area (cm²) and volume (cm³) per structure
+    ├── hu_<task>.csv                   # HU statistics per structure
+    ├── png/                            # Overlay PNGs with legend and spine label
+    ├── png_eroded/                     # Same with morphological erosion applied
+    ├── png_nolabel/                    # Overlay PNGs without legend
+    └── png_eroded_nolabel/             # Eroded PNGs without legend
+```
 
-#### **Tool 2: Batch Processing Output**
+#### CSV Format
 
-Results displayed in real-time in GUI and saved in root folder:
-- `batch_processing_log_YYYYMMDD_HHMMSS.txt` - Detailed log
-- `batch_processing_results_YYYYMMDD_HHMMSS.json` - Statistics (JSON format)
+`volume_<task>.csv` — Area per slice (cm²) and total volume (cm³) per structure.
 
-#### **Tool 3: Comparison Tool Output**
-
-Results displayed in real-time in GUI:
-- Slice Number: Manual annotation slice index
-- Manual Area (cm²): Manually annotated muscle area
-- AI Area (cm²): TotalSegmentator segmentation area on same slice
-- Dice Score: Similarity between masks (formula: `2 * |A ∩ B| / (|A| + |B|)`)
-
-Fixed pipeline behavior:
-- spine output is always enabled
-- PNG overlay generation is always enabled
-- fast mode is removed from the normal workflow
+`hu_<task>.csv` — Per-slice mean HU and std HU (with erosion), plus summary statistics.
 
 ### Calculation Logic
 
 - **Area (cm²)**: Mask pixels per slice × `spacing_x × spacing_y / 100`
 - **Volume (cm³)**: Total mask pixels × `spacing_x × spacing_y × spacing_z / 1000`
-- **Slice average HU**: Morphological erosion on mask (default 2 iterations, reduced to 3 or none if too few pixels), then average HU of eroded region
-- **Slice HU std**: Same erosion process, then standard deviation of HU in eroded region
-- **L/R muscle merge (HU)**: Area-weighted average for each slice
-- **Summary merge (mean_hu)**: Weighted by pixelcount
+- **Slice HU**: Morphological erosion on mask (default 2 iterations, auto-reduced if too few pixels remain), then mean/std of the eroded region
+- **L/R muscle merge**: Area-weighted average per slice
 
 ### Project Structure
 
-```text
+```
 totalseg-muscle-tool/
 ├── START 啟動.bat
 └── python/
-    ├── pywebview_tailwind_shell/   # WebView GUI
-    ├── seg.py                      # Segmentation core
-    ├── draw.py                     # PNG overlay
+    ├── pywebview_tailwind_shell/   # WebView UI (main entry point)
+    ├── core/                       # Shared pipeline logic
+    ├── seg.py                      # Step 1: Segmentation CLI
+    ├── export.py                   # Step 2: CSV + PNG export CLI
+    ├── draw.py                     # PNG overlay generation
     └── pyproject.toml              # Dependencies
 ```
 
-### Testing & Quality Checks
+### Testing & Quality
 
 ```bash
 cd python
-uv run pytest -q
+uv run python -m pytest -q
 uv run ruff check .
-uv run basedpyright .
+uv run python -m basedpyright
 ```
-
-Core tests include:
-- slice ordering / PNG naming behavior (`test_seg_draw_slice_behavior.py`)
 
 ### FAQ
 
-#### **Tool 1 (AI Segmentation)**
-- **Non-ASCII path causing drawing failure**: `draw.py` checks if path is ASCII. Move project/DICOM to pure English path.
-- **Slow on first run**: TotalSegmentator may need to download model weights, and CPU inference is very slow.
-- **GPU/CPU detection**: GUI displays detected device (`torch.cuda.is_available()`).
-- **License-gated tasks (e.g. `tissue_4_types`)**: GUI now shows a license dialog with a clickable official link (`https://backend.totalsegmentator.com/license-academic/`), supports pasting either a raw key or a command (`totalseg_set_license -l <KEY>`), then can retry the failed case.
-- **`JSONDecodeError` from TotalSegmentator config**: GUI auto-repairs broken `~/.totalsegmentator/config.json` and prompts license input again.
-
-#### **Tool 2 (Batch Processing)**
-- **No DICOM folders found**: Check max search depth setting or folder structure.
-- **Some cases failed**: Check log file for specific error messages.
-
-#### **Tool 3 (Manual vs AI Comparison)**
-- **Dice score lower than expected**: (1) Slice mismatch, (2) Different segmentation scope, (3) Poor AI quality. Check overlap in 3D Slicer.
-- **Spacing inconsistency warning**: When spacing differs >10%, program auto-resamples. Confirm both files are from same DICOM series.
-- **Multi-slice warning**: Program designed for single-slice comparison. If manual annotation has multiple slices, first slice is automatically selected.
+- **Non-ASCII path error**: Move project/DICOM to a pure English path.
+- **Slow first run**: TotalSegmentator downloads model weights on first use. CPU inference is very slow.
+- **License-gated task**: A license dialog appears automatically. Paste raw key or `totalseg_set_license -l <KEY>`, then retry.
+- **`JSONDecodeError` from TotalSegmentator config**: Auto-repaired on next run.
+- **Re-export with different parameters**: Switch to `匯出 CSV/PNG` tab, adjust params, and click Start — outputs are always overwritten.
+- **Compare: Dice lower than expected**: Check for slice mismatch, different segmentation scope, or poor AI quality. Verify in 3D Slicer.
 
 ### Notes
 
@@ -134,41 +123,52 @@ Core tests include:
 
 ### License
 
-This project is open source for research and educational purposes.
+Open source for research and educational purposes.
 
 ---
 
 ## 中文
 
-基於 TotalSegmentator 的醫學影像分割小工具，用於 CT 影像的肌肉分割分析。
+基於 TotalSegmentator 的醫學影像分割工具，用於 CT/MRI 影像的肌肉分割與分析。
 
 ### 功能特色
 
-#### **功能 1：統一 AI 分析介面 (Unified UI)**
-- **MRI & CT 雙模態支援**：切換影像類別自動調用 `total_mr` 或 CT 專屬模型。
-- **特定切片範圍計算**：可指定張數範圍（如第 20 到 40 張）進行精確的局部體積統計。
-  - 單一病患載入時會自動預填 `1 ~ 總張數`。
-  - 多病患模式會依每位病患切片上限自動防呆夾限。
-- **強健掃描邏輯**：自動識別深層嵌套目錄與無副檔名的 DICOM 檔案。
-- **智慧診斷引擎**：發生報錯時自動提供白話文「解決建議」，不需閱讀代碼。
-- **手動 vs AI 比較**：整合 DICE 系數與面積差異分析（AI 比對檔案限定 `.nii.gz`）。
-- **應用程式圖示支援**：在專案根目錄或 `python/` 放置 `app_icon.ico`（或 `app_icon.png`）即可自動套用。
+- **三 Tab WebView 介面**：自動分割 / 匯出 CSV/PNG / 單層面積比對
+- **MRI & CT 雙模態**：切換影像類別自動調用 `total_mr` 或 CT 專屬模型
+- **特定切片範圍計算**：可指定張數範圍進行精確局部統計
+  - 單一病例自動預填 `1 ~ 總張數`
+  - 多病例模式依各病例切片上限自動夾限
+- **強健掃描邏輯**：自動排除 `_output` 資料夾；使用 GDCM series 偵測避免誤判
+- **智慧診斷引擎**：自動將錯誤轉換為可操作的解決建議（授權、GPU OOM、權限問題）
+- **手動 vs AI 比較**：單層 DICE 係數與面積差異分析
+- **自動更新**：從 GitHub Releases 進行應用程式內更新
 
 ### 快速開始
 
 #### **Windows**
-雙擊執行 `START 啟動.bat` 啟動程式。首次執行會自動完成環境配置。
+雙擊 `START 啟動.bat`。首次執行會透過 `uv` 自動完成環境配置。
 
 #### **醫師快速操作**
-1. 雙擊 `START 啟動.bat`
-2. 按 `選擇 DICOM 資料夾` 載入病例
-3. 勾選要處理的病例
-4. 選擇 `CT` 或 `MRI`
-5. 視需要設定切片範圍
-6. 按 `開始` 執行
-7. 在右側查看輸出與執行記錄
 
-> **溫馨提示**：若啟動失敗或無法讀取檔案，建議將解壓縮後的資料夾移至 **C 槽或 D 槽等純英文路徑下**執行，以避免 Windows 中文路徑造成的不可預期錯誤。
+**步驟一 — 分割（自動分割 tab）**
+1. 雙擊 `START 啟動.bat`
+2. 點擊 `選擇來源資料夾` 載入 DICOM 病例
+3. 勾選要處理的病例
+4. 選擇 `CT` 或 `MRI`，選擇分割任務
+5. 點擊 `開始`
+
+**步驟二 — 匯出（匯出 CSV/PNG tab）**
+1. 切換到 `匯出 CSV/PNG` tab
+2. 選擇同一個資料夾
+3. 視需要調整參數（侵蝕次數、切片範圍、HU 閾值）
+4. 點擊 `開始` — 輸出結果會依當前參數直接覆蓋
+
+**比對（單層面積比對 tab）**
+1. 切換到 `單層面積比對` tab
+2. 選擇 AI mask 檔案（`.nii.gz`）與醫師手畫的單層 mask
+3. 點擊 `執行比對`
+
+> **注意**：建議將解壓縮後的資料夾移至 **C 槽或 D 槽等純英文路徑**，以避免中文路徑造成的錯誤。
 
 ### 系統需求
 
@@ -177,88 +177,68 @@ This project is open source for research and educational purposes.
 - **GPU**：建議使用 NVIDIA GPU（支援 CUDA），也支援 CPU
 - **網路**：第一次安裝時需要
 
-### 輸出說明
+### 輸出結構
 
-#### **工具 1：AI 分割輸出**
+範例：輸入 `SER00005/`，輸出建立於 `SER00005_output/`：
 
-範例：輸入 `SER00005/`，輸出會建立在 `SER00005_output/`：
+```
+SER00005_output/
+├── spine.json                          # 脊椎切片標籤
+├── segmentation_spine_fast/            # 脊椎遮罩（*.nii.gz）
+└── segmentation_<task>/
+    ├── *.nii.gz                        # 各結構遮罩
+    ├── volume_<task>.csv               # 各結構每層面積與總體積
+    ├── hu_<task>.csv                   # 各結構 HU 統計
+    ├── png/                            # 帶圖例與脊椎標籤的疊圖 PNG
+    ├── png_eroded/                     # 同上，套用形態學侵蝕
+    ├── png_nolabel/                    # 不含圖例的疊圖 PNG
+    └── png_eroded_nolabel/             # 不含圖例的侵蝕版本
+```
 
-- `segmentation_<task>/`：每個結構一個遮罩（`*.nii.gz`）與 `statistics.json`
-- `segmentation_spine/`：脊椎分割遮罩
-- `mask_<task>.csv`：主要分析 CSV（4 個區塊）
-  - 區塊 1：每層面積（cm²）
-  - 區塊 2：每層平均 HU（經侵蝕處理，左右肌肉按面積加權合併）
-  - 區塊 3：每層 HU 標準差（經侵蝕處理，左右肌肉按面積加權合併）
-  - 區塊 4：整體摘要（pixelcount / volume_cm³ / mean_hu，左右肌肉合併）
-- `mask_spine_fast.csv`：脊椎 CSV
-- `png/`：每層一張疊圖 PNG
+#### CSV 格式
 
-#### **工具 2：批次處理輸出**
+`volume_<task>.csv` — 各結構每層面積（cm²）與總體積（cm³）。
 
-結果即時顯示在 GUI 並儲存於根目錄：
-- `batch_processing_log_YYYYMMDD_HHMMSS.txt` - 詳細日誌
-- `batch_processing_results_YYYYMMDD_HHMMSS.json` - 結果統計（JSON 格式）
-
-#### **工具 3：比較工具輸出**
-
-結果即時顯示在 GUI：
-- 層數（Slice Number）：手動標註的層數索引
-- 手動面積（cm²）：醫生手動標註的肌肉面積
-- AI 面積（cm²）：TotalSegmentator 在同一層的分割面積
-- Dice 分數：兩個遮罩的相似度（公式：`2 * |A ∩ B| / (|A| + |B|)`）
-
-固定流程：
-- 一定會做脊椎分割
-- 一定會產生 CSV
-- 一定會產生 PNG 疊圖
-- `fast` 不在正式流程中
+`hu_<task>.csv` — 各結構每層平均 HU 與 HU 標準差（侵蝕後），以及摘要統計。
 
 ### 計算邏輯
 
 - **面積（cm²）**：每層遮罩像素數 × `spacing_x × spacing_y / 100`
 - **體積（cm³）**：所有遮罩像素數 × `spacing_x × spacing_y × spacing_z / 1000`
-- **層平均 HU**：對該層遮罩做形態學侵蝕（預設 2 次，像素太少會降為 3 次或不侵蝕），取侵蝕後區域的 HU 平均
-- **層 HU 標準差**：同上侵蝕流程，取侵蝕後區域的 HU 標準差
-- **左右合併（HU）**：以每層的左右面積做加權平均
-- **摘要合併（mean_hu）**：以 pixelcount 做加權平均
+- **層 HU**：對該層遮罩做形態學侵蝕（預設 2 次，像素太少會自動降低），取侵蝕後區域的 HU 均值/標準差
+- **左右合併**：以每層左右面積做加權平均
 
 ### 專案結構
 
-```text
+```
 totalseg-muscle-tool/
 ├── START 啟動.bat
 └── python/
-    ├── pywebview_tailwind_shell/   # WebView 介面
-    ├── seg.py                      # 分割核心
-    ├── draw.py                     # PNG 疊圖
+    ├── pywebview_tailwind_shell/   # WebView 介面（主入口）
+    ├── core/                       # 共用流程邏輯
+    ├── seg.py                      # 步驟一：分割 CLI
+    ├── export.py                   # 步驟二：CSV + PNG 匯出 CLI
+    ├── draw.py                     # PNG 疊圖生成
     └── pyproject.toml              # 依賴套件
 ```
 
-### 測試
+### 測試與品質檢查
 
 ```bash
 cd python
-uv run pytest -q
+uv run python -m pytest -q
+uv run ruff check .
+uv run python -m basedpyright
 ```
-
-目前核心測試包含：
-- slice 順序 / PNG 命名行為測試（`test_seg_draw_slice_behavior.py`）
 
 ### 常見問題
 
-#### **工具 1（AI 分割）**
-- **路徑含中文/特殊字元導致畫圖失敗**：`draw.py` 會檢查路徑是否為 ASCII。請將專案或 DICOM 移到純英文路徑。
-- **第一次跑很慢**：TotalSegmentator 可能需要下載模型權重，且 CPU 推論會非常耗時。
-- **GPU/CPU 判斷**：GUI 會顯示偵測到的裝置（`torch.cuda.is_available()`）。
-
-#### **工具 2（批次處理）**
-- **找不到 DICOM 資料夾**：檢查最大搜尋深度設定或資料夾結構。
-- **部分案例失敗**：查看日誌檔案了解具體錯誤訊息。
-
-#### **工具 3（手動 vs AI 比較）**
-- **Dice 分數低於預期**：可能原因：(1) 手動標註與 AI 分割的層數不一致、(2) 分割範圍定義不同、(3) AI 分割品質較差。建議在 3D Slicer 中檢視重疊情況。
-- **spacing 不一致警告**：當 spacing 差異超過 10% 時會顯示警告。程式會自動重採樣對齊，但仍建議確認兩個檔案是否來自同一個 DICOM series。
-- **多層標註警告**：程式設計為只比較單層。如果手動標註包含多層，會自動選擇第一層。
+- **路徑含中文/特殊字元**：請將專案或 DICOM 移到純英文路徑。
+- **第一次跑很慢**：TotalSegmentator 需要下載模型權重，CPU 推論非常耗時。
+- **需要授權**：授權對話框會自動出現，貼上金鑰或 `totalseg_set_license -l <KEY>` 指令後重試。
+- **TotalSegmentator config 損壞**：下次執行時會自動修復。
+- **改參數重跑步驟二**：切換到 `匯出 CSV/PNG` tab，調整參數，點擊開始即可（永遠覆蓋舊結果）。
+- **比對 Dice 偏低**：確認層數是否對齊、分割範圍定義是否相同，建議用 3D Slicer 檢視重疊情況。
 
 ### 注意事項
 
