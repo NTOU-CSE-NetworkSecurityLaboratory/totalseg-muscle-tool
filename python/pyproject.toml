@@ -1,10 +1,10 @@
 [project]
 name = "calculate-muscle-areas"
-version = "0.1.5"
+version = "0.1.7"
 description = "Muscle Area Calculator using TotalSegmentator"
 requires-python = ">=3.10,<3.11"
 dependencies = [
-    "nibabel>=5.3.2",
+    "opencv-python>=4.0.0",
     "pandas>=2.3.3",
     "pillow>=12.0.0",
     "simpleitk>=2.5.2",
@@ -12,11 +12,6 @@ dependencies = [
     "torch>=2.0.0",
     "torchvision>=0.15.0",
     "torchaudio>=2.0.0",
-    "rt-utils>=1.2.7",
-    "fury>=0.12.0",
-    "slicerio>=0.3.1",
-    "pyside6>=6.10.2",
-    "pyqtdarktheme>=2.1.0",
     "pywebview>=6.1",
 ]
 

@@ -78,8 +78,6 @@ def is_newer_version(current_version: str, latest_version: str) -> bool:
 
 def ensure_update_supported_install(app_root: str | Path) -> tuple[bool, str | None]:
     app_root = Path(app_root).resolve()
-    if (app_root / ".git").exists():
-        return False, "GUI 更新器不支援直接覆蓋開發中的 git 工作目錄。"
     if not (app_root / "python" / "pyproject.toml").exists():
         return False, "找不到 python/pyproject.toml，無法辨識為可更新的部署資料夾。"
     if not (app_root / "START 啟動.bat").exists():

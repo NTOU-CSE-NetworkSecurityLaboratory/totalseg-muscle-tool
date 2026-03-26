@@ -188,7 +188,7 @@ function renderUpdateStatus(status) {
   ui.settingsUpdateStatus.textContent = `目前版本：v${current}${latest}`;
 
   if (!status.install_supported) {
-    ui.settingsUpdateHint.textContent = status.install_block_reason || "目前環境不支援 GUI 更新。";
+    ui.settingsUpdateHint.textContent = status.install_block_reason || "";
     ui.btnInstallUpdate.disabled = true;
     return;
   }

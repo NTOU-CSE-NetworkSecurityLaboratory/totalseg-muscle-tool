@@ -351,8 +351,7 @@ class AppApi:
             }
 
     def open_releases_page(self) -> dict[str, Any]:
-        status = self.get_update_status()
-        target_url = str(status.get("release_page_url") or "https://github.com/NTOU-CSE-NetworkSecurityLaboratory/totalseg-muscle-tool/releases")
+        target_url = "https://github.com/NTOU-CSE-NetworkSecurityLaboratory/totalseg-muscle-tool/releases"
         webbrowser.open(target_url)
         return {"ok": True, "url": target_url}
 
