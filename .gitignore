@@ -37,6 +37,9 @@ SER*/
 mock_*/
 2.(41928147)_CHEST CT/
 
+# Claude Code
+.claude/
+
 # Local configs & Zips
 .env
 /NEW

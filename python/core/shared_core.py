@@ -30,11 +30,15 @@ def folder_numeric_sort_key(path_value: str | Path):
 def has_dicom_files(folder: Path) -> bool:
     if any(folder.glob("*.dcm")):
         return True
+    files = [f for f in folder.iterdir() if f.is_file() and not f.name.startswith(".")]
+    if not files:
+        return False
     if sitk:
         try:
-            reader = sitk.ImageSeriesReader()
-            names = reader.GetGDCMSeriesFileNames(str(folder))
-            return bool(names)
+            reader = sitk.ImageFileReader()
+            reader.SetFileName(str(files[0]))
+            reader.ReadImageInformation()
+            return True
         except Exception:
             return False
     return False

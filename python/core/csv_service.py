@@ -310,7 +310,7 @@ def read_spine_json(path) -> dict:
     if not p.exists():
         raise RuntimeError(
             f"spine.json 不存在：{p}\n"
-            "請先執行步驟一（分割）產生此檔案。"
+            "請先執行步驟二（匯出）產生此檔案。"
         )
     return json.loads(p.read_text())
 
@@ -378,37 +378,40 @@ def export_csvs(
     if not mask_files:
         raise RuntimeError(f"No mask .nii.gz files found in: {mask_dir}")
     log_info(f"Masks found: {len(mask_files)}")
-    muscles = [f.replace(".nii.gz", "") for f in mask_files]
 
-    area_results = {}
-    hu_results = {}
-    hu_std_results = {}
-    summary_results = {}
+    area_results: dict = {}
+    hu_results: dict = {}
+    hu_std_results: dict = {}
+    summary_results: dict = {}
 
     for idx, fname in enumerate(mask_files, 1):
         nii_path = Path(mask_dir) / fname
         log_info(f"Processing mask [{idx}/{len(mask_files)}]: {nii_path.name}")
-        (
-            slice_area,
-            total_volume,
-            slice_mean_hu,
-            slice_std_hu,
-            total_pixels,
-            summary_mean_hu,
-            summary_median_hu,
-            summary_variance_hu,
-            summary_hu_values,
-        ) = load_mask_metrics(
-            nii_path,
-            ct_arr,
-            spacing,
-            resampler,
-            erosion_iters,
-            slice_start,
-            slice_end,
-            hu_min,
-            hu_max,
-        )
+        try:
+            (
+                slice_area,
+                total_volume,
+                slice_mean_hu,
+                slice_std_hu,
+                total_pixels,
+                summary_mean_hu,
+                summary_median_hu,
+                summary_variance_hu,
+                summary_hu_values,
+            ) = load_mask_metrics(
+                nii_path,
+                ct_arr,
+                spacing,
+                resampler,
+                erosion_iters,
+                slice_start,
+                slice_end,
+                hu_min,
+                hu_max,
+            )
+        except Exception as exc:
+            log_info(f"[警告] 跳過損壞的 mask：{nii_path.name}（{exc}）")
+            continue
         muscle_name = fname.replace(".nii.gz", "")
         area_results[muscle_name] = np.round(slice_area, 2)
         hu_results[muscle_name] = slice_mean_hu
@@ -422,6 +425,10 @@ def export_csvs(
             "hu_values": summary_hu_values,
         }
 
+    if not area_results:
+        raise RuntimeError(f"所有 mask 都無法載入，請確認 .nii.gz 檔案是否損壞：{mask_dir}")
+
+    muscles = list(area_results.keys())
     merged_hu, merged_muscles = merge_bilateral_hu_data(area_results, hu_results)
     merged_area, merged_area_muscles = merge_bilateral_area_data(area_results)
     merged_std, merged_std_muscles = merge_bilateral_std_data(

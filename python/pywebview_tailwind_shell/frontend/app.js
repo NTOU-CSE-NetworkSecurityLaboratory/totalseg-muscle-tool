@@ -102,12 +102,12 @@ function setTab(tab) {
   // modality hidden only on compare tab
   if (ui.modalitySection) ui.modalitySection.classList.toggle("hidden", tab === "compare");
 
-  // export-settings (erosion, slice range, HU) only visible for export tab
+  // export-settings (erosion, slice range, HU) visible on seg and export tabs
   const exportSettings = document.getElementById("export-settings-section");
-  if (exportSettings) exportSettings.classList.toggle("hidden", tab !== "export");
+  if (exportSettings) exportSettings.classList.toggle("hidden", tab === "compare");
 
   // active mode
-  state.activeMode = tab === "export" ? "export_only" : "seg_only";
+  state.activeMode = tab === "export" ? "export_only" : "auto";
 
   // tab button active styles
   const ACTIVE = ["bg-brand", "text-white", "border-[#335fc1]"];
@@ -220,7 +220,7 @@ function renderTaskTable(tasks) {
   if (!tasks || tasks.length === 0) {
     ui.taskTableBody.innerHTML = `
       <tr>
-        <td colspan="3" class="px-4 py-10 text-center text-slate-500">找不到 DICOM 病例</td>
+        <td colspan="4" class="px-4 py-10 text-center text-slate-500">找不到 DICOM 病例</td>
       </tr>`;
     return;
   }
@@ -239,6 +239,9 @@ function renderTaskTable(tasks) {
         </td>
         <td class="px-3 py-3 align-top text-slate-700">${t.label}</td>
         <td class="px-3 py-3 align-top">${statusBadge(localizeStatus(t.status))}</td>
+        <td class="px-3 py-3 align-top">
+          ${t.status === "Success" ? `<button class="open-output-btn text-brand hover:underline text-xs whitespace-nowrap" data-task-id="${t.id}">開啟資料夾</button>` : ""}
+        </td>
       </tr>`)
     .join("");
 
@@ -246,6 +249,13 @@ function renderTaskTable(tasks) {
     el.addEventListener("change", async (e) => {
       const taskId = Number(e.target.dataset.taskId);
       await window.pywebview.api.set_task_selected(taskId, e.target.checked);
+    });
+  });
+
+  document.querySelectorAll(".open-output-btn").forEach((el) => {
+    el.addEventListener("click", async (e) => {
+      const taskId = Number(e.target.dataset.taskId);
+      await window.pywebview.api.open_output_folder(taskId);
     });
   });
 }

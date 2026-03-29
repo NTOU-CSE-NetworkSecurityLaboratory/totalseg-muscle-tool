@@ -23,7 +23,6 @@ from core.shared_core import (
     build_step2_command,
     compare_masks,
     filter_tasks_by_modality,
-    folder_numeric_sort_key,
     scan_dicom_cases,
 )
 from core.shared_core import (
@@ -523,8 +522,28 @@ class AppApi:
         except Exception:
             return {"ok": True, "masked_key": "", "has_license": False}
 
+    def open_output_folder(self, task_id: int) -> dict[str, Any]:
+        import subprocess
+        import sys
+        with self._lock:
+            task = next((t for t in self._tasks if int(t["id"]) == int(task_id)), None)
+        if task is None:
+            return {"ok": False, "message": "找不到任務"}
+        path = str(Path(task["path"]).parent / f"{Path(task['path']).name}_output")
+        try:
+            if sys.platform == "win32":
+                os.startfile(path)
+            elif sys.platform == "darwin":
+                subprocess.run(["open", path], check=False)
+            else:
+                subprocess.run(["xdg-open", path], check=False)
+            return {"ok": True}
+        except Exception as exc:
+            return {"ok": False, "message": str(exc)}
+
     def open_source_folder(self) -> dict[str, Any]:
-        import subprocess, sys
+        import subprocess
+        import sys
         path = self._source_root
         if not path:
             return {"ok": False, "message": "尚未選擇資料夾"}
@@ -765,26 +784,17 @@ class AppApi:
             hu_max_raw = config.get("hu_max") or None
             hu_min = float(hu_min_raw) if hu_min_raw is not None else None
             hu_max = float(hu_max_raw) if hu_max_raw is not None else None
-            run_mode = str(config.get("mode", "seg_only"))
+            run_mode = str(config.get("mode", "auto"))
+            modality = str(config.get("modality", "CT"))
 
-            if run_mode == "seg_only":
-                modality = str(config.get("modality", "CT"))
-                # --- 步驟一：分割（已有結果則跳過）---
-                primary_seg_dir = (
-                    Path(dicom_path).parent
-                    / f"{Path(dicom_path).name}_output"
-                    / f"segmentation_{task_name}"
-                )
-                if any(primary_seg_dir.glob("*.nii.gz")):
-                    self._log(f"已有分割結果，跳過步驟一：{task['label']}")
-                    self._set_task_status_by_id(task_id, "Success")
-                    self._session_log_write(
-                        f"CASE_END | id={task_id} | status=skipped_seg_exists"
-                    )
-                    with self._lock:
-                        self._progress_done += 1
-                    continue
+            primary_seg_dir = (
+                Path(dicom_path).parent
+                / f"{Path(dicom_path).name}_output"
+                / f"segmentation_{task_name}"
+            )
 
+            if run_mode in ("auto", "seg_only"):
+                # --- 步驟一：分割 ---
                 self._log(f"步驟一：分割 {task['label']}")
                 step1_args = build_step1_command(
                     dicom_path=dicom_path,
@@ -815,7 +825,6 @@ class AppApi:
                         break
                     continue
 
-            elif run_mode == "export_only":
                 # --- 步驟二：匯出 CSV + PNG ---
                 if self._stop_requested:
                     self._set_task_status_by_id(task_id, "Stopped")
@@ -827,6 +836,40 @@ class AppApi:
                     stop_reason = "stopped"
                     break
 
+                self._log(f"步驟二：匯出 {task_name} — {task['label']}")
+                step2_args = build_step2_command(
+                    dicom_path=dicom_path,
+                    out_path=out_path,
+                    task=task_name,
+                    erosion_iters=erosion_iters,
+                    slice_start=slice_start,
+                    slice_end=slice_end,
+                    hu_min=hu_min,
+                    hu_max=hu_max,
+                )
+                step2_code, step2_excerpt = self._run_proc([uv_path, *step2_args])
+
+            elif run_mode == "export_only":
+                # --- 步驟二：僅匯出 CSV + PNG ---
+                if not any(primary_seg_dir.glob("*.nii.gz")):
+                    self._log(f"[錯誤] 未找到分割結果，請先執行自動分割：{task['label']}")
+                    self._set_task_status_by_id(task_id, "Failed step 2 (no segmentation)")
+                    self._session_log_write(f"CASE_END | id={task_id} | status=failed | reason=no_segmentation")
+                    with self._lock:
+                        self._progress_done += 1
+                    continue
+
+                if self._stop_requested:
+                    self._set_task_status_by_id(task_id, "Stopped")
+                    self._session_log_write(
+                        f"CASE_END | id={task_id} | status=stopped | step=2"
+                    )
+                    with self._lock:
+                        self._progress_done += 1
+                    stop_reason = "stopped"
+                    break
+
+                self._log(f"[注意] 將覆蓋現有 CSV / PNG：{task['label']}")
                 self._log(f"步驟二：匯出 {task_name} — {task['label']}")
                 step2_args = build_step2_command(
                     dicom_path=dicom_path,

@@ -1,4 +1,4 @@
-# TotalSeg Muscle Tool (v0.1.7)
+# TotalSeg Muscle Tool (v0.1.8)
 
 [English](#english) | [中文](#中文)
 
@@ -10,7 +10,8 @@ A medical image segmentation tool based on TotalSegmentator for CT/MRI muscle se
 
 ### Features
 
-- **Three-tab WebView UI**: 自動分割 (Segmentation) / 匯出 CSV/PNG (Export) / 單層面積比對 (Compare)
+- **Three-tab WebView UI**: 自動分割 (Auto Segmentation) / 單獨匯出 CSV / PNG (Export Only) / 單層面積比對 (Compare)
+- **Two-mode pipeline**: Mode 1 (自動分割 tab) runs Step 1 + Step 2 in sequence; Mode 2 (單獨匯出 tab) re-runs Step 2 only, for re-export after manual mask editing
 - **MRI & CT Support**: Select modality to automatically use `total_mr` or standard CT models.
 - **Partial Volume Calculation**: Specify a slice range for targeted volumetric analysis.
   - Single-case mode auto-fills total slice count (`1 ~ N`).
@@ -34,11 +35,15 @@ Double-click `START 啟動.bat`. Dependencies are auto-managed on first run via 
 4. Select `CT` or `MRI` and choose a task
 5. Click `開始`
 
-**Step 2 — Export CSV/PNG (匯出 CSV/PNG tab)**
-1. Switch to the `匯出 CSV/PNG` tab
+**Step 2 — Export Only (單獨匯出 CSV / PNG tab)**
+
+Use this tab to re-export CSV / PNG after manually editing `.nii.gz` mask files.
+
+1. Switch to the `單獨匯出 CSV / PNG` tab
 2. Select the same folder
 3. Choose task and adjust parameters (erosion, slice range, HU threshold) if needed
-4. Click `開始` — outputs are always overwritten with current settings
+4. Click `開始` — existing CSV / PNG are always overwritten
+5. Click `開啟資料夾` next to any completed case to open its output folder directly
 
 **Compare (單層面積比對 tab)**
 1. Switch to the `單層面積比對` tab
@@ -60,8 +65,15 @@ Example: Input `SER00005/`, output created in `SER00005_output/`:
 
 ```
 SER00005_output/
-├── spine.json                          # Spine slice labels
-├── segmentation_spine_fast/            # Spine masks (*.nii.gz)
+├── spine.json                          # Spine orientation and slice labels
+├── segmentation_spine_fast/            # Spine masks + export
+│   ├── *.nii.gz                        # One mask per vertebra
+│   ├── volume_spine_fast.csv
+│   ├── hu_spine_fast.csv
+│   ├── png/
+│   ├── png_eroded/
+│   ├── png_nolabel/
+│   └── png_eroded_nolabel/
 └── segmentation_<task>/
     ├── *.nii.gz                        # One mask per structure
     ├── volume_<task>.csv               # Area (cm²) and volume (cm³) per structure
@@ -114,7 +126,7 @@ uv run python -m basedpyright
 - **Slow first run**: TotalSegmentator downloads model weights on first use. CPU inference is very slow.
 - **License-gated task**: A license dialog appears automatically. Paste raw key or `totalseg_set_license -l <KEY>`, then retry.
 - **`JSONDecodeError` from TotalSegmentator config**: Auto-repaired on next run.
-- **Re-export with different parameters**: Switch to `匯出 CSV/PNG` tab, adjust params, and click Start — outputs are always overwritten.
+- **Re-export with different parameters**: Switch to `單獨匯出 CSV / PNG` tab, adjust params, and click Start — outputs are always overwritten.
 - **Compare: Dice lower than expected**: Check for slice mismatch, different segmentation scope, or poor AI quality. Verify in 3D Slicer.
 
 ### Notes
@@ -133,7 +145,8 @@ Open source for research and educational purposes.
 
 ### 功能特色
 
-- **三 Tab WebView 介面**：自動分割 / 匯出 CSV/PNG / 單層面積比對
+- **三 Tab WebView 介面**：自動分割 / 單獨匯出 CSV / PNG / 單層面積比對
+- **雙模式流程**：Mode 1（自動分割 tab）執行步驟一 + 步驟二；Mode 2（單獨匯出 tab）僅執行步驟二，供醫師修改遮罩後重新匯出
 - **MRI & CT 雙模態**：切換影像類別自動調用 `total_mr` 或 CT 專屬模型
 - **特定切片範圍計算**：可指定張數範圍進行精確局部統計
   - 單一病例自動預填 `1 ~ 總張數`
@@ -157,11 +170,15 @@ Open source for research and educational purposes.
 4. 選擇 `CT` 或 `MRI`，選擇分割任務
 5. 點擊 `開始`
 
-**步驟二 — 匯出（匯出 CSV/PNG tab）**
-1. 切換到 `匯出 CSV/PNG` tab
+**單獨匯出（單獨匯出 CSV / PNG tab）**
+
+手動修改 `.nii.gz` 遮罩後，用此 tab 重新匯出 CSV / PNG。
+
+1. 切換到 `單獨匯出 CSV / PNG` tab
 2. 選擇同一個資料夾
 3. 視需要調整參數（侵蝕次數、切片範圍、HU 閾值）
-4. 點擊 `開始` — 輸出結果會依當前參數直接覆蓋
+4. 點擊 `開始` — 既有 CSV / PNG 會直接覆蓋
+5. 完成後可點擊病例旁的 `開啟資料夾` 直接開啟輸出目錄
 
 **比對（單層面積比對 tab）**
 1. 切換到 `單層面積比對` tab
@@ -183,8 +200,15 @@ Open source for research and educational purposes.
 
 ```
 SER00005_output/
-├── spine.json                          # 脊椎切片標籤
-├── segmentation_spine_fast/            # 脊椎遮罩（*.nii.gz）
+├── spine.json                          # 脊椎方向與切片標籤
+├── segmentation_spine_fast/            # 脊椎遮罩 + 匯出
+│   ├── *.nii.gz                        # 各椎體遮罩
+│   ├── volume_spine_fast.csv
+│   ├── hu_spine_fast.csv
+│   ├── png/
+│   ├── png_eroded/
+│   ├── png_nolabel/
+│   └── png_eroded_nolabel/
 └── segmentation_<task>/
     ├── *.nii.gz                        # 各結構遮罩
     ├── volume_<task>.csv               # 各結構每層面積與總體積
@@ -237,7 +261,7 @@ uv run python -m basedpyright
 - **第一次跑很慢**：TotalSegmentator 需要下載模型權重，CPU 推論非常耗時。
 - **需要授權**：授權對話框會自動出現，貼上金鑰或 `totalseg_set_license -l <KEY>` 指令後重試。
 - **TotalSegmentator config 損壞**：下次執行時會自動修復。
-- **改參數重跑步驟二**：切換到 `匯出 CSV/PNG` tab，調整參數，點擊開始即可（永遠覆蓋舊結果）。
+- **改參數重跑步驟二**：切換到 `單獨匯出 CSV / PNG` tab，調整參數，點擊開始即可（永遠覆蓋舊結果）。
 - **比對 Dice 偏低**：確認層數是否對齊、分割範圍定義是否相同，建議用 3D Slicer 檢視重疊情況。
 
 ### 注意事項

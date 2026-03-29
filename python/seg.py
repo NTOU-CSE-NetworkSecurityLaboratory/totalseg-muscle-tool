@@ -1,10 +1,9 @@
-"""步驟一 CLI：DICOM → segmentation + spine.json"""
+"""步驟一 CLI：DICOM → segmentation（spine 先跑，已存在則跳過）"""
 import argparse
 import time
 from datetime import datetime
 from pathlib import Path
 
-import SimpleITK as sitk
 from totalsegmentator.python_api import totalsegmentator
 
 from core.app_version import read_local_app_version
@@ -18,15 +17,6 @@ APP_VERSION = read_local_app_version()
 def log_info(message):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}] {message}")
-
-
-def load_ct_image(dicom_path: Path):
-    reader = sitk.ImageSeriesReader()
-    files = reader.GetGDCMSeriesFileNames(str(dicom_path))
-    if not files:
-        raise RuntimeError(f"No DICOM found in: {dicom_path}")
-    reader.SetFileNames(files)
-    return sitk.Cast(reader.Execute(), sitk.sitkInt16)
 
 
 def run_task(dicom_path, out_dir, task, fast=False, roi_subset=None):
@@ -80,7 +70,6 @@ def main():
         paths=paths,
         log_info=log_info,
         run_task=run_task,
-        load_ct_image=load_ct_image,
     )
 
     log_info(f"Step 1 completed in {time.perf_counter() - t0:.2f}s")

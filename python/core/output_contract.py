@@ -10,7 +10,6 @@ class SegmentPaths:
     output_base: Path
     primary_seg_dir: Path
     spine_seg_dir: Path
-    spine_json: Path
 
 
 @dataclass(frozen=True)
@@ -18,6 +17,7 @@ class ExportPaths:
     """步驟二（CSV + PNG 輸出）使用的路徑。"""
     output_base: Path
     primary_seg_dir: Path
+    spine_seg_dir: Path
     spine_json: Path
     volume_csv: Path
     hu_csv: Path
@@ -25,6 +25,13 @@ class ExportPaths:
     png_eroded_dir: Path
     png_nolabel_dir: Path
     png_eroded_nolabel_dir: Path
+    # spine export 輸出（在 segmentation_spine_fast/ 內）
+    spine_volume_csv: Path
+    spine_hu_csv: Path
+    spine_png_dir: Path
+    spine_png_eroded_dir: Path
+    spine_png_nolabel_dir: Path
+    spine_png_eroded_nolabel_dir: Path
 
 
 def resolve_output_base(dicom_path: Path, out: Path | None) -> Path:
@@ -37,16 +44,17 @@ def build_segment_paths(*, dicom_path: Path, output_root: Path | None, task: str
         output_base=output_base,
         primary_seg_dir=output_base / f"segmentation_{task}",
         spine_seg_dir=output_base / "segmentation_spine_fast",
-        spine_json=output_base / "spine.json",
     )
 
 
 def build_export_paths(*, dicom_path: Path, output_root: Path | None, task: str) -> ExportPaths:
     output_base = resolve_output_base(dicom_path, output_root)
     primary_seg_dir = output_base / f"segmentation_{task}"
+    spine_seg_dir = output_base / "segmentation_spine_fast"
     return ExportPaths(
         output_base=output_base,
         primary_seg_dir=primary_seg_dir,
+        spine_seg_dir=spine_seg_dir,
         spine_json=output_base / "spine.json",
         volume_csv=primary_seg_dir / f"volume_{task}.csv",
         hu_csv=primary_seg_dir / f"hu_{task}.csv",
@@ -54,4 +62,10 @@ def build_export_paths(*, dicom_path: Path, output_root: Path | None, task: str)
         png_eroded_dir=primary_seg_dir / "png_eroded",
         png_nolabel_dir=primary_seg_dir / "png_nolabel",
         png_eroded_nolabel_dir=primary_seg_dir / "png_eroded_nolabel",
+        spine_volume_csv=spine_seg_dir / "volume_spine_fast.csv",
+        spine_hu_csv=spine_seg_dir / "hu_spine_fast.csv",
+        spine_png_dir=spine_seg_dir / "png",
+        spine_png_eroded_dir=spine_seg_dir / "png_eroded",
+        spine_png_nolabel_dir=spine_seg_dir / "png_nolabel",
+        spine_png_eroded_nolabel_dir=spine_seg_dir / "png_eroded_nolabel",
     )
