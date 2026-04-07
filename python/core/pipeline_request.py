@@ -7,6 +7,7 @@ from pathlib import Path
 @dataclass(frozen=True)
 class SegmentRequest:
     """步驟一：分割請求。"""
+
     dicom_path: Path
     output_root: Path | None
     task: str
@@ -16,6 +17,7 @@ class SegmentRequest:
 @dataclass(frozen=True)
 class ExportRequest:
     """步驟二：CSV + PNG 輸出請求。"""
+
     dicom_path: Path
     output_root: Path | None
     task: str

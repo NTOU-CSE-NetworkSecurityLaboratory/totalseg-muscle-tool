@@ -1,6 +1,7 @@
 """
 Mode 2 防呆 + corrupt mask 跳過 測試
 """
+
 from __future__ import annotations
 
 import unittest.mock as mock
@@ -16,6 +17,7 @@ from core.pipeline_request import ExportRequest
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_request(dicom_path: Path) -> ExportRequest:
     return ExportRequest(
@@ -50,6 +52,7 @@ def _noop_run_png(*_args, **_kwargs) -> None:
 # 防呆：分割資料夾不存在
 # ---------------------------------------------------------------------------
 
+
 def test_missing_seg_dir_raises(tmp_path: Path) -> None:
     dicom_dir = tmp_path / "CT"
     dicom_dir.mkdir()
@@ -71,6 +74,7 @@ def test_missing_seg_dir_raises(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 # 防呆：分割資料夾存在但沒有 .nii.gz
 # ---------------------------------------------------------------------------
+
 
 def test_empty_seg_dir_raises(tmp_path: Path) -> None:
     dicom_dir = tmp_path / "CT"
@@ -95,6 +99,7 @@ def test_empty_seg_dir_raises(tmp_path: Path) -> None:
 # 防呆：DICOM 資料夾不存在
 # ---------------------------------------------------------------------------
 
+
 def test_missing_dicom_dir_raises(tmp_path: Path) -> None:
     dicom_dir = tmp_path / "CT_nonexistent"
 
@@ -116,6 +121,7 @@ def test_missing_dicom_dir_raises(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 # 防呆：DICOM 資料夾是空的
 # ---------------------------------------------------------------------------
+
 
 def test_empty_dicom_dir_raises(tmp_path: Path) -> None:
     dicom_dir = tmp_path / "CT"
@@ -139,6 +145,7 @@ def test_empty_dicom_dir_raises(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 # 防呆：沒有 spine → 警示但繼續，export_csvs 只被呼叫一次（主任務）
 # ---------------------------------------------------------------------------
+
 
 def test_no_spine_warns_and_continues(tmp_path: Path) -> None:
     dicom_dir = tmp_path / "CT"
@@ -173,6 +180,7 @@ def test_no_spine_warns_and_continues(tmp_path: Path) -> None:
 # 防呆：有 spine → export_csvs 被呼叫兩次（spine + 主任務）
 # ---------------------------------------------------------------------------
 
+
 def test_with_spine_exports_twice(tmp_path: Path) -> None:
     dicom_dir = tmp_path / "CT"
     dicom_dir.mkdir()
@@ -195,9 +203,17 @@ def test_with_spine_exports_twice(tmp_path: Path) -> None:
     fake_sitk.ImageSeriesReader.return_value.GetGDCMSeriesFileNames.return_value = ["f1"]
     fake_sitk.ImageSeriesReader.return_value.Execute.return_value = MagicMock()
 
-    with mock.patch("core.fixed_pipeline.build_spine_meta", return_value={"orientation": "cranial_to_caudal", "slice_labels": {}}):
+    with mock.patch(
+        "core.fixed_pipeline.build_spine_meta",
+        return_value={"orientation": "cranial_to_caudal", "slice_labels": {}},
+    ):
         with mock.patch("core.fixed_pipeline.write_spine_json"):
-            with mock.patch("builtins.__import__", side_effect=lambda name, *a, **k: fake_sitk if name == "SimpleITK" else __import__(name, *a, **k)):
+            with mock.patch(
+                "builtins.__import__",
+                side_effect=lambda name, *a, **k: (
+                    fake_sitk if name == "SimpleITK" else __import__(name, *a, **k)
+                ),
+            ):
                 execute_step2_export(
                     request=request,
                     paths=paths,

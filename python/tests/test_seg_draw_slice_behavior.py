@@ -68,9 +68,14 @@ class _FakeSitk:
         ct_image = self._ct_image
 
         class Reader:
-            def GetGDCMSeriesFileNames(self, _): return ["001.dcm", "002.dcm", "003.dcm"]
-            def SetFileNames(self, _): pass
-            def Execute(self): return ct_image
+            def GetGDCMSeriesFileNames(self, _):
+                return ["001.dcm", "002.dcm", "003.dcm"]
+
+            def SetFileNames(self, _):
+                pass
+
+            def Execute(self):
+                return ct_image
 
         return Reader()
 
@@ -82,10 +87,17 @@ class _FakeSitk:
 
     def ResampleImageFilter(self):
         class Resampler:
-            def SetReferenceImage(self, _): pass
-            def SetInterpolator(self, _): pass
-            def SetTransform(self, _): pass
-            def Execute(self, img): return img
+            def SetReferenceImage(self, _):
+                pass
+
+            def SetInterpolator(self, _):
+                pass
+
+            def SetTransform(self, _):
+                pass
+
+            def Execute(self, img):
+                return img
 
         return Resampler()
 
@@ -93,16 +105,32 @@ class _FakeSitk:
         return None
 
 
-def _make_load_mask_metrics(slice_area, total_volume, slice_mean_hu, slice_std_hu,
-                             total_pixels, summary_mean_hu, summary_median_hu,
-                             summary_variance_hu, summary_hu_values=None):
+def _make_load_mask_metrics(
+    slice_area,
+    total_volume,
+    slice_mean_hu,
+    slice_std_hu,
+    total_pixels,
+    summary_mean_hu,
+    summary_median_hu,
+    summary_variance_hu,
+    summary_hu_values=None,
+):
     if summary_hu_values is None:
         summary_hu_values = np.array([], dtype=np.float32)
 
     def _load(*_args, **_kwargs):
-        return (slice_area, total_volume, slice_mean_hu, slice_std_hu,
-                total_pixels, summary_mean_hu, summary_median_hu,
-                summary_variance_hu, summary_hu_values)
+        return (
+            slice_area,
+            total_volume,
+            slice_mean_hu,
+            slice_std_hu,
+            total_pixels,
+            summary_mean_hu,
+            summary_median_hu,
+            summary_variance_hu,
+            summary_hu_values,
+        )
 
     return _load
 
@@ -266,11 +294,13 @@ def test_dicom_to_overlay_png_writes_nolabel_variants_without_annotations(monkey
         original_save_overlay_png = draw.save_overlay_png
 
         def _record_save(*args, **kwargs):
-            calls.append({
-                "output_path": kwargs["output_path"],
-                "draw_annotations": kwargs.get("draw_annotations", True),
-                "spine_label": kwargs.get("spine_label"),
-            })
+            calls.append(
+                {
+                    "output_path": kwargs["output_path"],
+                    "draw_annotations": kwargs.get("draw_annotations", True),
+                    "spine_label": kwargs.get("spine_label"),
+                }
+            )
             return original_save_overlay_png(*args, **kwargs)
 
         monkeypatch.setattr(draw, "save_overlay_png", _record_save)
@@ -298,10 +328,14 @@ def test_dicom_to_overlay_png_writes_nolabel_variants_without_annotations(monkey
 def test_find_spine_label_uses_spine_json_dict():
     with _sandbox() as tmp_path:
         spine_json = tmp_path / "spine.json"
-        spine_json.write_text(json.dumps({
-            "orientation": "cranial_to_caudal",
-            "slice_labels": {"0": "C3", "1": "T1", "5": "L2"},
-        }))
+        spine_json.write_text(
+            json.dumps(
+                {
+                    "orientation": "cranial_to_caudal",
+                    "slice_labels": {"0": "C3", "1": "T1", "5": "L2"},
+                }
+            )
+        )
 
         spine_labels = draw.load_spine_labels(spine_json)
 

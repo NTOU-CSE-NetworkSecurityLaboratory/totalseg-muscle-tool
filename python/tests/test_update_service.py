@@ -85,7 +85,9 @@ def test_build_update_status_marks_update_available(tmp_path):
 def test_extract_release_payload_finds_project_root(tmp_path):
     zip_path = tmp_path / "release.zip"
     with zipfile.ZipFile(zip_path, "w") as archive:
-        archive.writestr("totalseg-muscle-tool-main/python/pyproject.toml", '[project]\nversion = "0.0.2"\n')
+        archive.writestr(
+            "totalseg-muscle-tool-main/python/pyproject.toml", '[project]\nversion = "0.0.2"\n'
+        )
         archive.writestr("totalseg-muscle-tool-main/START 啟動.bat", "@echo off\n")
 
     payload_root = extract_release_payload(zip_path, tmp_path / "extract")

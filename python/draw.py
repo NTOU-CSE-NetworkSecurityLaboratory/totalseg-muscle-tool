@@ -68,9 +68,7 @@ def draw_legend(image, slice_labels, color_map):
         draw.text((tx, ty), name, fill=(255, 255, 255, 255), font=font)
 
 
-def discover_mask_files(
-    dicom_dir: Path, masks_dir: Path = None, task_name=None
-):
+def discover_mask_files(dicom_dir: Path, masks_dir: Path = None, task_name=None):
     """
     原始邏輯：如果有傳 masks_dir 就用，否則自己算
     """
@@ -78,9 +76,7 @@ def discover_mask_files(
 
     # 優先使用傳入的 masks_dir
     if masks_dir and masks_dir.exists():
-        mask_files.extend(
-            sorted([*masks_dir.glob("*.nii"), *masks_dir.glob("*.nii.gz")])
-        )
+        mask_files.extend(sorted([*masks_dir.glob("*.nii"), *masks_dir.glob("*.nii.gz")]))
         return mask_files
 
     # Fallback: 自己算（舊邏輯）
@@ -178,9 +174,7 @@ def erode_mask_slice(mask_slice, erosion_iters):
     eroded = cv2.erode(mask_u8, kernel, iterations=erosion_iters)
     eroded_pixels = np.sum(eroded > 0)
 
-    if erosion_iters > 3 and (
-        eroded_pixels < 50 or eroded_pixels < original_pixels * 0.2
-    ):
+    if erosion_iters > 3 and (eroded_pixels < 50 or eroded_pixels < original_pixels * 0.2):
         eroded = cv2.erode(mask_u8, kernel, iterations=3)
         eroded_pixels = np.sum(eroded > 0)
 
@@ -343,9 +337,7 @@ def dicom_to_overlay_png(
             output_count += 1
 
         except Exception as e:
-            print(
-                f"[WARNING] Overlay failed for slice {idx}: {files[idx]}, error: {e}"
-            )
+            print(f"[WARNING] Overlay failed for slice {idx}: {files[idx]}, error: {e}")
             continue
 
     print(f"[SUCCESS] Total overlays saved: {output_count} slices in {output_dirs[0]}")
@@ -353,18 +345,14 @@ def dicom_to_overlay_png(
 
 def main():
     parser = argparse.ArgumentParser(description="Draw overlays for segmentation.")
-    parser.add_argument(
-        "--dicom", type=str, required=True, help="Input DICOM folder"
-    )
+    parser.add_argument("--dicom", type=str, required=True, help="Input DICOM folder")
     parser.add_argument(
         "--out",
         type=str,
         default=None,
         help="Output root folder",
     )
-    parser.add_argument(
-        "--task", type=str, default="abdominal_muscles", help="Segmentation task"
-    )
+    parser.add_argument("--task", type=str, default="abdominal_muscles", help="Segmentation task")
     parser.add_argument(
         "--erosion_iters",
         type=int,
@@ -377,9 +365,7 @@ def main():
     args = parser.parse_args()
 
     dicom_path = Path(args.dicom).resolve()
-    output_base = (
-        Path(args.out) if args.out else dicom_path.parent
-    ) / f"{dicom_path.name}_output"
+    output_base = (Path(args.out) if args.out else dicom_path.parent) / f"{dicom_path.name}_output"
 
     seg_dir = output_base / f"segmentation_{args.task}"
     png_dir = seg_dir / "png"

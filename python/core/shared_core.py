@@ -123,7 +123,6 @@ def scan_dicom_cases(root_path: str | Path) -> list[CaseItem]:
     return items
 
 
-
 def build_step1_command(
     *,
     dicom_path: str,
@@ -132,11 +131,19 @@ def build_step1_command(
     modality: str,
 ) -> list[str]:
     return [
-        "run", "--no-sync", "python", "-u", "seg.py",
-        "--dicom", str(dicom_path),
-        "--out", str(out_path),
-        "--task", str(task),
-        "--modality", str(modality),
+        "run",
+        "--no-sync",
+        "python",
+        "-u",
+        "seg.py",
+        "--dicom",
+        str(dicom_path),
+        "--out",
+        str(out_path),
+        "--task",
+        str(task),
+        "--modality",
+        str(modality),
     ]
 
 
@@ -152,11 +159,19 @@ def build_step2_command(
     hu_max: float | None = None,
 ) -> list[str]:
     cmd = [
-        "run", "--no-sync", "python", "-u", "export.py",
-        "--dicom", str(dicom_path),
-        "--out", str(out_path),
-        "--task", str(task),
-        "--erosion_iters", str(erosion_iters),
+        "run",
+        "--no-sync",
+        "python",
+        "-u",
+        "export.py",
+        "--dicom",
+        str(dicom_path),
+        "--out",
+        str(out_path),
+        "--task",
+        str(task),
+        "--erosion_iters",
+        str(erosion_iters),
     ]
     if slice_start is not None:
         cmd.extend(["--slice_start", str(slice_start)])

@@ -3,9 +3,13 @@ from __future__ import annotations
 import csv
 import json
 import time
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import numpy as np
+
+from core.image_io import read_image_with_ascii_fallback as _read_image_with_ascii_fallback
 
 CRANIAL_TO_CAUDAL = "cranial_to_caudal"
 CAUDAL_TO_CRANIAL = "caudal_to_cranial"
@@ -19,6 +23,7 @@ _VERTEBRA_ORDER = {
 # ---------------------------------------------------------------------------
 # Bilateral merge helpers
 # ---------------------------------------------------------------------------
+
 
 def merge_bilateral_hu_data(area_results, hu_results):
     merged_hu = {}
@@ -121,10 +126,8 @@ def merge_bilateral_std_data(area_results, hu_results, std_results):
                             left_area[i] * left_mean[i] + right_area[i] * right_mean[i]
                         ) / total_area[i]
                         var = (
-                            left_area[i]
-                            * (left_std[i] ** 2 + (left_mean[i] - mu) ** 2)
-                            + right_area[i]
-                            * (right_std[i] ** 2 + (right_mean[i] - mu) ** 2)
+                            left_area[i] * (left_std[i] ** 2 + (left_mean[i] - mu) ** 2)
+                            + right_area[i] * (right_std[i] ** 2 + (right_mean[i] - mu) ** 2)
                         ) / total_area[i]
                         merged[i] = np.sqrt(var)
                 merged_std[base_name] = np.round(merged, 2)
@@ -201,6 +204,7 @@ def merge_bilateral_summary_data(summary_results):
 # Spine orientation
 # ---------------------------------------------------------------------------
 
+
 def infer_spine_orientation(
     spine_mask_dir,
     *,
@@ -271,9 +275,29 @@ def write_transposed_summary_table(writer, structures, metrics_by_structure, met
 # Spine JSON — 步驟一產生，步驟二讀取
 # ---------------------------------------------------------------------------
 
-def build_spine_meta(spine_seg_dir, ct_image, sitk_module) -> dict:
-    """從 spine segmentation 資料夾計算方向與 slice 標籤，回傳 dict 供寫入 spine.json。"""
+
+def build_spine_meta(
+    spine_seg_dir,
+    ct_image,
+    sitk_module: Any,
+    *,
+    image_reader: Callable[[Path], Any] | None = None,
+    log_info: Callable[[str], None] | None = None,
+) -> dict:
+    """從 spine segmentation 資料夾計算方向與 slice 標籤，回傳 dict 供寫入 spine.json。
+
+    image_reader: 讀取 .nii.gz 檔案的函式，預設使用帶 ASCII fallback 的安全版本，
+                  可避免 Windows 中文路徑導致 SimpleITK 崩潰。
+    log_info:     日誌輸出函式，供 image_reader fallback 使用。
+    """
     spine_seg_dir = Path(spine_seg_dir)
+
+    _log = log_info if log_info is not None else (lambda msg: None)
+
+    def _safe_read(p: Path) -> Any:
+        if image_reader is not None:
+            return image_reader(p)
+        return _read_image_with_ascii_fallback(p, sitk_module=sitk_module, log_info=_log)
 
     resampler = sitk_module.ResampleImageFilter()
     resampler.SetReferenceImage(ct_image)
@@ -283,7 +307,7 @@ def build_spine_meta(spine_seg_dir, ct_image, sitk_module) -> dict:
     orientation = infer_spine_orientation(
         spine_seg_dir,
         sitk_module=sitk_module,
-        image_reader=lambda p: sitk_module.ReadImage(str(p)),
+        image_reader=_safe_read,
         resampler=resampler,
     )
 
@@ -291,7 +315,7 @@ def build_spine_meta(spine_seg_dir, ct_image, sitk_module) -> dict:
     slice_labels: dict[str, str] = {}
     for mask_file in sorted(spine_seg_dir.glob("vertebrae_*.nii.gz")):
         label = mask_file.stem.replace(".nii", "").replace("vertebrae_", "")
-        mask_img = sitk_module.ReadImage(str(mask_file))
+        mask_img = _safe_read(mask_file)
         arr = sitk_module.GetArrayFromImage(resampler.Execute(mask_img))
         for slice_idx in np.where(np.any(arr > 0, axis=(1, 2)))[0]:
             idx_str = str(int(slice_idx))
@@ -308,16 +332,14 @@ def write_spine_json(path, meta: dict) -> None:
 def read_spine_json(path) -> dict:
     p = Path(path)
     if not p.exists():
-        raise RuntimeError(
-            f"spine.json 不存在：{p}\n"
-            "請先執行步驟二（匯出）產生此檔案。"
-        )
+        raise RuntimeError(f"spine.json 不存在：{p}\n請先執行步驟二（匯出）產生此檔案。")
     return json.loads(p.read_text())
 
 
 # ---------------------------------------------------------------------------
 # 主要輸出函式：export_csvs
 # ---------------------------------------------------------------------------
+
 
 def export_csvs(
     mask_dir,
@@ -445,7 +467,9 @@ def export_csvs(
         with open(volume_csv, "w", newline="") as f:
             writer = csv.writer(f)
 
-            write_section_title(writer, "Section 1: per-slice volume/area for original left-right structures")
+            write_section_title(
+                writer, "Section 1: per-slice volume/area for original left-right structures"
+            )
             writer.writerow(["slicenumber"] + muscles)
             for row_number, export_index in enumerate(export_indices, start=1):
                 row = [str(row_number)]
@@ -458,7 +482,9 @@ def export_csvs(
                 writer.writerow(row)
 
             writer.writerow([])
-            write_section_title(writer, "Section 2: per-slice volume/area with left-right structures merged")
+            write_section_title(
+                writer, "Section 2: per-slice volume/area with left-right structures merged"
+            )
             writer.writerow(["slicenumber"] + merged_area_muscles)
             for row_number, export_index in enumerate(export_indices, start=1):
                 row = [str(row_number)]
@@ -501,7 +527,9 @@ def export_csvs(
             writer.writerow([])
 
             # per-slice mean HU
-            write_section_title(writer, "Section 1: per-slice mean HU with left-right structures merged")
+            write_section_title(
+                writer, "Section 1: per-slice mean HU with left-right structures merged"
+            )
             writer.writerow(["slicenumber"] + merged_muscles)
             for row_number, export_index in enumerate(export_indices, start=1):
                 row = [str(row_number)]
@@ -516,7 +544,10 @@ def export_csvs(
             writer.writerow([])
 
             # per-slice HU std
-            write_section_title(writer, "Section 2: per-slice HU standard deviation with left-right structures merged")
+            write_section_title(
+                writer,
+                "Section 2: per-slice HU standard deviation with left-right structures merged",
+            )
             writer.writerow(["slicenumber"] + merged_std_muscles)
             for row_number, export_index in enumerate(export_indices, start=1):
                 row = [str(row_number)]

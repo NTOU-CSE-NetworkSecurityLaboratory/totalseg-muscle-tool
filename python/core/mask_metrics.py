@@ -20,16 +20,12 @@ def _get_eroded_hu_values(
     kernel = np.ones((3, 3), np.uint8)
     erosion_iters = max(int(erosion_iters), 0)
     if erosion_iters > 0:
-        eroded_mask = cv2.erode(
-            slice_mask.astype(np.uint8), kernel, iterations=erosion_iters
-        )
+        eroded_mask = cv2.erode(slice_mask.astype(np.uint8), kernel, iterations=erosion_iters)
     else:
         eroded_mask = slice_mask.astype(np.uint8)
 
     eroded_pixels = np.sum(eroded_mask > 0)
-    if erosion_iters > 3 and (
-        eroded_pixels < 50 or eroded_pixels < original_pixels * 0.2
-    ):
+    if erosion_iters > 3 and (eroded_pixels < 50 or eroded_pixels < original_pixels * 0.2):
         eroded_mask = cv2.erode(slice_mask.astype(np.uint8), kernel, iterations=3)
         eroded_pixels = np.sum(eroded_mask > 0)
 
@@ -97,8 +93,11 @@ def get_mask_area_volume_and_hu(
     all_hu_values = []
     for i in range(mask_arr.shape[0]):
         hu_values = _get_eroded_hu_values(
-            mask_arr[i, :, :], ct_arr[i, :, :], erosion_iters,
-            hu_min=hu_min, hu_max=hu_max,
+            mask_arr[i, :, :],
+            ct_arr[i, :, :],
+            erosion_iters,
+            hu_min=hu_min,
+            hu_max=hu_max,
         )
         if len(hu_values) > 0:
             mean_hu = float(np.mean(hu_values))

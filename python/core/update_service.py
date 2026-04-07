@@ -15,10 +15,10 @@ from urllib.request import urlopen
 
 from core.app_version import read_local_app_version
 
-RELEASES_PAGE_URL = "https://github.com/NTOU-CSE-NetworkSecurityLaboratory/totalseg-muscle-tool/releases"
-LATEST_RELEASE_API_URL = (
-    "https://api.github.com/repos/NTOU-CSE-NetworkSecurityLaboratory/totalseg-muscle-tool/releases/latest"
+RELEASES_PAGE_URL = (
+    "https://github.com/NTOU-CSE-NetworkSecurityLaboratory/totalseg-muscle-tool/releases"
 )
+LATEST_RELEASE_API_URL = "https://api.github.com/repos/NTOU-CSE-NetworkSecurityLaboratory/totalseg-muscle-tool/releases/latest"
 _UPDATE_RUNNER_NAME = "totalseg_release_updater.py"
 _UPDATE_LOG_DIR_NAME = "totalseg_update_logs"
 _SKIP_NAMES = {
@@ -161,8 +161,9 @@ def build_update_log_path(app_root: str | Path) -> Path:
 
 
 def _build_update_runner_script() -> str:
-    return textwrap.dedent(
-        """
+    return (
+        textwrap.dedent(
+            """
         from __future__ import annotations
 
         import argparse
@@ -284,7 +285,9 @@ def _build_update_runner_script() -> str:
         if __name__ == "__main__":
             raise SystemExit(main())
         """
-    ).strip() + "\n"
+        ).strip()
+        + "\n"
+    )
 
 
 def spawn_release_update(
@@ -325,7 +328,9 @@ def spawn_release_update(
     }
 
     if os.name == "nt":
-        popen_kwargs["creationflags"] = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        popen_kwargs["creationflags"] = (
+            subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        )
     else:
         popen_kwargs["start_new_session"] = True
 

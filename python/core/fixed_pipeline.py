@@ -32,6 +32,7 @@ def resolve_spine_task(modality: str) -> str:
 # 步驟一：分割（spine 先跑，已存在則跳過）
 # ---------------------------------------------------------------------------
 
+
 def execute_step1_segmentation(
     *,
     request: SegmentRequest,
@@ -69,6 +70,7 @@ def execute_step1_segmentation(
 # 步驟二：CSV + PNG（不覆蓋原則）
 # ---------------------------------------------------------------------------
 
+
 def execute_step2_export(
     *,
     request: ExportRequest,
@@ -91,8 +93,7 @@ def execute_step2_export(
     # --- 防呆檢查 ---
     if not paths.primary_seg_dir.exists():
         raise RuntimeError(
-            f"分割資料夾不存在：{paths.primary_seg_dir}\n"
-            "請先執行自動分割（Mode 1）。"
+            f"分割資料夾不存在：{paths.primary_seg_dir}\n請先執行自動分割（Mode 1）。"
         )
     if not any(paths.primary_seg_dir.glob("*.nii.gz")):
         raise RuntimeError(
@@ -100,30 +101,33 @@ def execute_step2_export(
             "請確認分割是否完成，或重新執行自動分割。"
         )
     if not request.dicom_path.exists():
-        raise RuntimeError(
-            f"DICOM 資料夾不存在：{request.dicom_path}"
-        )
+        raise RuntimeError(f"DICOM 資料夾不存在：{request.dicom_path}")
     if not request.dicom_path.is_dir() or not any(request.dicom_path.iterdir()):
-        raise RuntimeError(
-            f"DICOM 資料夾是空的：{request.dicom_path}"
-        )
+        raise RuntimeError(f"DICOM 資料夾是空的：{request.dicom_path}")
 
     # --- 產生 spine.json（orientation only，步驟二開始時產生）---
-    spine_files = list(paths.spine_seg_dir.glob("vertebrae_*.nii.gz")) if paths.spine_seg_dir.is_dir() else []
+    spine_files = (
+        list(paths.spine_seg_dir.glob("vertebrae_*.nii.gz")) if paths.spine_seg_dir.is_dir() else []
+    )
     if spine_files:
         log_info("Step 2: building spine.json from spine segmentation")
         try:
             import SimpleITK as sitk  # noqa: PLC0415
+
             reader = sitk.ImageSeriesReader()
             names = reader.GetGDCMSeriesFileNames(str(request.dicom_path))
             reader.SetFileNames(names)
             ct_image = reader.Execute()
-            meta = build_spine_meta(paths.spine_seg_dir, ct_image, sitk)
+            meta = build_spine_meta(paths.spine_seg_dir, ct_image, sitk, log_info=log_info)
             write_spine_json(paths.spine_json, meta)
-            log_info(f"Step 2: spine.json saved ({meta['orientation']}, {len(meta.get('slice_labels', {}))} slice labels)")
+            log_info(
+                f"Step 2: spine.json saved ({meta['orientation']}, {len(meta.get('slice_labels', {}))} slice labels)"
+            )
         except Exception as exc:
             log_info(f"Step 2: spine.json build failed ({exc}), using default orientation")
-            write_spine_json(paths.spine_json, {"orientation": "cranial_to_caudal", "slice_labels": {}})
+            write_spine_json(
+                paths.spine_json, {"orientation": "cranial_to_caudal", "slice_labels": {}}
+            )
     else:
         log_info("Step 2: no spine segmentation found, using default orientation")
         write_spine_json(paths.spine_json, {"orientation": "cranial_to_caudal", "slice_labels": {}})

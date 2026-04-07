@@ -7,6 +7,7 @@ from pathlib import Path
 @dataclass(frozen=True)
 class SegmentPaths:
     """步驟一（分割）產生與使用的路徑。"""
+
     output_base: Path
     primary_seg_dir: Path
     spine_seg_dir: Path
@@ -15,6 +16,7 @@ class SegmentPaths:
 @dataclass(frozen=True)
 class ExportPaths:
     """步驟二（CSV + PNG 輸出）使用的路徑。"""
+
     output_base: Path
     primary_seg_dir: Path
     spine_seg_dir: Path

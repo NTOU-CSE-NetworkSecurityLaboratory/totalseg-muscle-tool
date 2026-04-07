@@ -1,8 +1,8 @@
 """步驟一 CLI：DICOM → segmentation（spine 先跑，已存在則跳過）"""
+
 import argparse
 import time
 from datetime import datetime
-from pathlib import Path
 
 from totalsegmentator.python_api import totalsegmentator
 
@@ -39,17 +39,13 @@ def run_task(dicom_path, out_dir, task, fast=False, roi_subset=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description=f"Step 1: Segmentation v{APP_VERSION}"
-    )
+    parser = argparse.ArgumentParser(description=f"Step 1: Segmentation v{APP_VERSION}")
     parser.add_argument("--dicom", type=str, required=True, help="DICOM folder path")
     parser.add_argument("--out", type=str, default=None, help="Output root folder")
     parser.add_argument(
         "--task", type=str, default="abdominal_muscles", help="Segmentation task name"
     )
-    parser.add_argument(
-        "--modality", type=str, default="CT", help="Imaging modality (CT or MRI)"
-    )
+    parser.add_argument("--modality", type=str, default="CT", help="Imaging modality (CT or MRI)")
 
     args = parser.parse_args()
     request = segment_request_from_args(args)
