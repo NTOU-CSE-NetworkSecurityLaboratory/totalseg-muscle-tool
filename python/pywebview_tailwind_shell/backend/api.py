@@ -76,6 +76,12 @@ TASK_OPTIONS = [
 
 LICENSE_APPLY_URL = "https://backend.totalsegmentator.com/license-academic/"
 
+_ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+
+def _strip_ansi(text: str) -> str:
+    return _ANSI_ESCAPE.sub("", text)
+
 
 class AppApi:
     def __init__(self) -> None:
@@ -354,7 +360,7 @@ class AppApi:
         webbrowser.open(target_url)
         return {"ok": True, "url": target_url}
 
-    def close_for_update(self) -> dict[str, Any]:
+def close_for_update(self) -> dict[str, Any]:
         def _close_window() -> None:
             try:
                 self._get_window().destroy()
@@ -569,34 +575,69 @@ class AppApi:
         if proc.stdout is None:
             return ""
 
+        import codecs
+        decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
         stream = proc.stdout
         line_buf = ""
+        cr_buf = ""       # content buffered when \r seen, waiting for next char
+        last_was_cr = False
         excerpt_parts: list[str] = []
+        stop_flag = False
+
+        def _flush_cr_as_ephemeral() -> None:
+            nonlocal cr_buf, last_was_cr
+            if cr_buf.strip():
+                self._log_ephemeral(_strip_ansi(cr_buf))
+                excerpt_parts.append(cr_buf)
+            cr_buf = ""
+            last_was_cr = False
 
         while True:
-            chunk = stream.read(1)
+            chunk = stream.read(256)
             if not chunk:
                 break
-            ch = chunk.decode("utf-8", errors="replace")
-            if ch == "\r":
-                if line_buf.strip():
-                    self._log_ephemeral(line_buf)
-                    excerpt_parts.append(line_buf)
+            for ch in decoder.decode(chunk):
+                if ch == "\r":
+                    # flush any previous pending \r as ephemeral first
+                    if last_was_cr:
+                        _flush_cr_as_ephemeral()
+                    cr_buf = line_buf
                     line_buf = ""
-                continue
-            if ch == "\n":
-                if line_buf.strip():
-                    self._log(line_buf)
-                    excerpt_parts.append(line_buf)
-                line_buf = ""
-                continue
-            line_buf += ch
-            with self._lock:
-                if self._stop_requested:
-                    break
+                    last_was_cr = True
+                    continue
+                if ch == "\n":
+                    if last_was_cr:
+                        # \r\n → permanent line
+                        self._log(_strip_ansi(cr_buf))
+                        if cr_buf:
+                            excerpt_parts.append(cr_buf)
+                        cr_buf = ""
+                        last_was_cr = False
+                    else:
+                        # standalone \n → permanent line
+                        self._log(_strip_ansi(line_buf))
+                        if line_buf:
+                            excerpt_parts.append(line_buf)
+                        line_buf = ""
+                    continue
+                if last_was_cr:
+                    # char after \r that is not \n → standalone \r was a progress bar
+                    _flush_cr_as_ephemeral()
+                line_buf += ch
+                with self._lock:
+                    if self._stop_requested:
+                        stop_flag = True
+                        break
+            if stop_flag:
+                break
 
-        if line_buf.strip():
-            self._log(line_buf)
+        # flush remaining
+        remaining = decoder.decode(b"", final=True)
+        if last_was_cr:
+            _flush_cr_as_ephemeral()
+        line_buf += remaining
+        if line_buf:
+            self._log(_strip_ansi(line_buf))
             excerpt_parts.append(line_buf)
 
         if not excerpt_parts:
@@ -654,11 +695,15 @@ class AppApi:
     def _run_proc(self, cmd: list[str]) -> tuple[int, str]:
         """Start a subprocess, consume its output, return (exit_code, excerpt)."""
         try:
+            env = os.environ.copy()
+            env["PYTHONIOENCODING"] = "utf-8"
+            env["PYTHONUTF8"] = "1"
             proc = subprocess.Popen(
                 cmd,
                 cwd=str(self._python_dir),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
+                env=env,
             )
             with self._lock:
                 self._proc = proc

@@ -263,7 +263,7 @@ function renderTaskTable(tasks) {
 function applyLogEvents(events) {
   if (!events || events.length === 0) return;
 
-  for (const ev of events) {
+for (const ev of events) {
     const type = ev.type || "line";
     const text = ev.text || "";
 
