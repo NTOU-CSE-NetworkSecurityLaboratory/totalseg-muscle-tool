@@ -360,7 +360,7 @@ class AppApi:
         webbrowser.open(target_url)
         return {"ok": True, "url": target_url}
 
-def close_for_update(self) -> dict[str, Any]:
+    def close_for_update(self) -> dict[str, Any]:
         def _close_window() -> None:
             try:
                 self._get_window().destroy()
