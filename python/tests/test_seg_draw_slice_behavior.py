@@ -162,6 +162,7 @@ def test_volume_csv_preserves_slice_order_for_cranial_orientation():
             load_mask_metrics=load_metrics,
             image_reader=None,
             log_info=lambda _: None,
+            ct_reader=lambda _: ct_image,
         )
 
         with volume_csv.open(newline="") as f:
@@ -201,6 +202,7 @@ def test_volume_csv_reverses_slice_order_for_caudal_orientation():
             load_mask_metrics=load_metrics,
             image_reader=None,
             log_info=lambda _: None,
+            ct_reader=lambda _: ct_image,
         )
 
         with volume_csv.open(newline="") as f:
@@ -230,6 +232,11 @@ def test_dicom_to_overlay_png_avoids_filename_collisions(monkeypatch):
             draw.sitk,
             "ImageSeriesReader",
             lambda: _FakeSeriesReader(fake_files, ct_image),
+        )
+        monkeypatch.setattr(
+            draw,
+            "read_ct_via_dicom2nifti",
+            lambda *_args, **_kwargs: ct_image,
         )
         monkeypatch.setattr(
             draw,
@@ -277,6 +284,11 @@ def test_dicom_to_overlay_png_writes_nolabel_variants_without_annotations(monkey
             draw.sitk,
             "ImageSeriesReader",
             lambda: _FakeSeriesReader(fake_files, ct_image),
+        )
+        monkeypatch.setattr(
+            draw,
+            "read_ct_via_dicom2nifti",
+            lambda *_args, **_kwargs: ct_image,
         )
         monkeypatch.setattr(
             draw,
@@ -386,6 +398,7 @@ def test_hu_csv_summary_includes_median_and_variance():
             log_info=lambda _: None,
             slice_start=2,
             slice_end=2,
+            ct_reader=lambda _: ct_image,
         )
 
         with hu_csv.open(newline="") as f:
@@ -396,3 +409,46 @@ def test_hu_csv_summary_includes_median_and_variance():
         assert rows[summary_header_index + 2] == ["mean_hu", "112.0"]
         assert rows[summary_header_index + 3] == ["median_hu", "112.0"]
         assert rows[summary_header_index + 4] == ["variance_hu", "52.0"]
+
+
+def test_export_csvs_uses_dicom2nifti_when_no_ct_reader_provided(monkeypatch):
+    """Regression: export_csvs must default to dicom2nifti so CT and totalsegmentator
+    masks share orientation. Without this, feet-first / reversed-Z scans silently
+    produce zero-filled volume CSVs.
+    """
+    with _sandbox() as tmp_path:
+        ct_arr = np.zeros((3, 2, 2), dtype=np.int16)
+        ct_image = _make_sitk_image(ct_arr)
+        fake_sitk = _FakeSitk(ct_image, ct_arr)
+
+        spine_json = tmp_path / "spine.json"
+        _write_spine_json(spine_json, "cranial_to_caudal")
+
+        slice_area = np.array([1.00, 0.00, 4.00])
+        load_metrics = _make_load_mask_metrics(
+            slice_area, 2.5, np.zeros(3), np.zeros(3), 5, 0.0, 0.0, 0.0
+        )
+
+        called = {"path": None}
+
+        def _fake_dicom2nifti(path, *, sitk_module, log_info):
+            called["path"] = str(path)
+            return ct_image
+
+        monkeypatch.setattr(csv_service, "read_ct_via_dicom2nifti", _fake_dicom2nifti)
+
+        csv_service.export_csvs(
+            tmp_path / "masks",
+            tmp_path / "volume.csv",
+            tmp_path / "hu.csv",
+            tmp_path / "dicom",
+            spine_json,
+            sitk_module=fake_sitk,
+            listdir=lambda _: ["muscle.nii.gz"],
+            load_mask_metrics=load_metrics,
+            image_reader=None,
+            log_info=lambda _: None,
+        )
+
+        assert called["path"] is not None, "export_csvs must call read_ct_via_dicom2nifti when ct_reader is None"
+        assert called["path"].endswith("dicom")

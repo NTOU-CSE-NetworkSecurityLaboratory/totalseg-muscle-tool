@@ -39,3 +39,31 @@ def read_image_with_ascii_fallback(
             except RuntimeError:
                 log_info(f"[ERROR] Fallback read also failed for: {image_path}")
                 raise first_error
+
+
+def read_ct_via_dicom2nifti(
+    dicom_dir: str | Path,
+    *,
+    sitk_module: Any,
+    log_info,
+):
+    """Read DICOM CT using dicom2nifti so geometry matches totalsegmentator masks.
+
+    totalsegmentator preprocesses DICOM with dicom2nifti (reorient_nifti=True) and
+    writes masks in the resulting LAS/RAS space. If Step 2 reads the same DICOM
+    via sitk.ImageSeriesReader, scanners with non-identity Z direction (feet-first
+    or reversed-Z acquisitions) produce a CT image whose origin/direction does not
+    match the mask, and resampling silently yields all-zero arrays inside the mask.
+    """
+    import dicom2nifti  # noqa: PLC0415
+
+    dicom_dir = Path(dicom_dir)
+    with tempfile.TemporaryDirectory(prefix="ct_d2n_") as td:
+        tmp_nii = Path(td) / "ct.nii.gz"
+        try:
+            dicom2nifti.dicom_series_to_nifti(str(dicom_dir), str(tmp_nii), reorient_nifti=True)
+        except Exception as exc:
+            log_info(f"[ERROR] dicom2nifti failed on {dicom_dir}: {exc}")
+            raise
+        ct = sitk_module.ReadImage(str(tmp_nii))
+    return sitk_module.Cast(ct, sitk_module.sitkInt16)

@@ -9,6 +9,7 @@ from typing import Any
 
 import numpy as np
 
+from core.image_io import read_ct_via_dicom2nifti
 from core.image_io import read_image_with_ascii_fallback as _read_image_with_ascii_fallback
 
 CRANIAL_TO_CAUDAL = "cranial_to_caudal"
@@ -360,6 +361,7 @@ def export_csvs(
     hu_max=None,
     write_volume=True,
     write_hu=True,
+    ct_reader=None,
 ):
     """
     從 segmentation mask 產生 volume CSV 和 HU CSV。
@@ -374,14 +376,12 @@ def export_csvs(
     log_info(f"Stage: CSV export started (mask_dir={mask_dir})")
 
     # --- 讀 CT ---
-    reader = sitk_module.ImageSeriesReader()
-    files = reader.GetGDCMSeriesFileNames(str(dicom_dir))
-    if not files:
-        raise RuntimeError(f"No DICOM found in: {dicom_dir}")
-    log_info(f"DICOM slices: {len(files)}")
-
-    reader.SetFileNames(files)
-    ct_image = sitk_module.Cast(reader.Execute(), sitk_module.sitkInt16)
+    # 預設用 dicom2nifti（跟 totalsegmentator 內部相同），確保 CT 跟 mask 同 origin/direction
+    if ct_reader is None:
+        ct_image = read_ct_via_dicom2nifti(dicom_dir, sitk_module=sitk_module, log_info=log_info)
+    else:
+        ct_image = ct_reader(dicom_dir)
+    log_info(f"CT loaded: size={ct_image.GetSize()} spacing={ct_image.GetSpacing()}")
     ct_arr = sitk_module.GetArrayFromImage(ct_image)
     spacing = ct_image.GetSpacing()
 

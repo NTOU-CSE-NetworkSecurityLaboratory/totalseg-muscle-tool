@@ -10,6 +10,8 @@ import numpy as np
 import SimpleITK as sitk
 from PIL import Image, ImageDraw, ImageFont
 
+from core.image_io import read_ct_via_dicom2nifti
+
 
 def validate_path_ascii(path: Path):
     try:
@@ -235,8 +237,7 @@ def dicom_to_overlay_png(
         print(f"[ERROR] No DICOM found in: {dicom_dir}")
         raise RuntimeError(f"No DICOM found in: {dicom_dir}")
 
-    reader.SetFileNames(files)
-    image = sitk.Cast(reader.Execute(), sitk.sitkInt16)
+    image = read_ct_via_dicom2nifti(dicom_dir, sitk_module=sitk, log_info=print)
     arr = sitk.GetArrayFromImage(image)
 
     wc, ww = 40, 400  # Window center and width

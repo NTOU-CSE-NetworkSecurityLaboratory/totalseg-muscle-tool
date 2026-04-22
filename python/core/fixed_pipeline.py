@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from core.csv_service import build_spine_meta, write_spine_json
+from core.image_io import read_ct_via_dicom2nifti
 from core.output_contract import ExportPaths, SegmentPaths
 from core.pipeline_request import ExportRequest, SegmentRequest
 
@@ -114,10 +115,9 @@ def execute_step2_export(
         try:
             import SimpleITK as sitk  # noqa: PLC0415
 
-            reader = sitk.ImageSeriesReader()
-            names = reader.GetGDCMSeriesFileNames(str(request.dicom_path))
-            reader.SetFileNames(names)
-            ct_image = reader.Execute()
+            ct_image = read_ct_via_dicom2nifti(
+                request.dicom_path, sitk_module=sitk, log_info=log_info
+            )
             meta = build_spine_meta(paths.spine_seg_dir, ct_image, sitk, log_info=log_info)
             write_spine_json(paths.spine_json, meta)
             log_info(
